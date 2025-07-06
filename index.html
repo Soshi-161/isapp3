@@ -10,184 +10,6 @@
     <script type="text/javascript" src="lib/jquery.min.js"></script>
     <script type="text/javascript" src="lib/osql.js"></script>
     <script type="text/javascript" src="lib/courses.js"></script>
-    <style>
-        /* 白を基調としたクリーンなデザイン */
-        .clean-white-bg {
-            background: #ffffff;
-        }
-        
-        .soft-shadow {
-            box-shadow: 0 2px 8px -2px rgba(0, 0, 0, 0.1), 0 4px 16px -4px rgba(0, 0, 0, 0.06);
-        }
-        
-        .course-card {
-            transition: all 0.3s ease;
-            background: #ffffff;
-            border: 1px solid #e5e7eb;
-        }
-        
-        .course-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(0,0,0,0.1);
-            background: #f9fafb;
-            border-color: #3b82f6;
-        }
-        
-        .empty-slot {
-            background: #ffffff;
-            border: 2px dashed #d1d5db;
-        }
-        
-        .empty-slot:hover {
-            background: #f8fafc;
-            border: 2px dashed #3b82f6;
-        }
-        
-        .schedule-header {
-            background: #ffffff;
-            color: #1f2937;
-            border: 1px solid #e5e7eb;
-        }
-        
-        .period-cell {
-            background: #f8fafc;
-            color: #374151;
-            border: 1px solid #e5e7eb;
-        }
-        
-        .animated-counter {
-            animation: pulse 2s infinite;
-        }
-        
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.95; }
-        }
-        
-        .floating-stats {
-            position: fixed;
-            top: 120px;
-            right: 20px;
-            z-index: 40;
-        }
-        
-        /* レスポンシブ対応の強化 */
-        @media (max-width: 768px) {
-            .floating-stats {
-                top: 140px;
-                right: 10px;
-                transform: scale(0.85);
-            }
-            
-            .schedule-grid-mobile {
-                overflow-x: auto;
-                -webkit-overflow-scrolling: touch;
-            }
-            
-            .timetable-cell-mobile {
-                min-width: 140px;
-                font-size: 0.8rem;
-            }
-            
-            .modal-mobile {
-                margin: 0.5rem;
-                max-height: 90vh;
-            }
-        }
-        
-        @media (max-width: 480px) {
-            .floating-stats {
-                transform: scale(0.75);
-                top: 70px;
-                right: 5px;
-            }
-            
-            .timetable-cell-mobile {
-                min-width: 120px;
-                min-height: 80px;
-                font-size: 0.75rem;
-            }
-            
-            .header-mobile h1 {
-                font-size: 1.5rem;
-            }
-            
-            .header-mobile span {
-                font-size: 0.9rem;
-            }
-        }
-        
-        /* タッチデバイス用の最適化 */
-        @media (hover: none) and (pointer: coarse) {
-            .course-card:hover {
-                transform: none;
-            }
-            
-            .empty-slot:hover {
-                transform: none;
-                background: #ffffff;
-                border: 2px dashed #d1d5db;
-            }
-            
-            .empty-slot:active {
-                background: #f8fafc;
-                border: 2px dashed #3b82f6;
-            }
-            
-            button:hover {
-                transform: none;
-            }
-            
-            button:active {
-                transform: scale(0.95);
-            }
-        }
-        
-        /* スクロールバーのスタイリング */
-        .schedule-grid-mobile::-webkit-scrollbar {
-            height: 8px;
-        }
-        
-        .schedule-grid-mobile::-webkit-scrollbar-track {
-            background: #f1f5f9;
-            border-radius: 4px;
-        }
-        
-        .schedule-grid-mobile::-webkit-scrollbar-thumb {
-            background: #cbd5e1;
-            border-radius: 4px;
-        }
-        
-        .schedule-grid-mobile::-webkit-scrollbar-thumb:hover {
-            background: #94a3b8;
-        }
-        
-        .white-glass {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(0, 0, 0, 0.1);
-        }
-        
-        .text-primary {
-            color: #1f2937;
-        }
-        
-        .text-secondary {
-            color: #6b7280;
-        }
-        
-        .accent-blue {
-            color: #3b82f6;
-        }
-        
-        .border-subtle {
-            border-color: #e5e7eb;
-        }
-        
-        .bg-white-subtle {
-            background: #fafbfc;
-        }
-    </style>
     <script>
         osql.requireLogin();
 
@@ -231,11 +53,11 @@
             // 単位数に応じてカウンターの色を変更
             const counterElement = document.getElementById('credits-display');
             if (totalCredits >= 20) {
-                counterElement.className = 'bg-green-500 text-white p-4 rounded-xl soft-shadow animated-counter border border-green-400';
+                counterElement.className = 'bg-gradient-to-r from-green-500 to-emerald-600 text-white p-4 rounded-2xl shadow-lg transform transition-all duration-300 hover:scale-105';
             } else if (totalCredits >= 10) {
-                counterElement.className = 'bg-yellow-500 text-white p-4 rounded-xl soft-shadow animated-counter border border-yellow-400';
+                counterElement.className = 'bg-gradient-to-r from-yellow-500 to-orange-600 text-white p-4 rounded-2xl shadow-lg transform transition-all duration-300 hover:scale-105';
             } else {
-                counterElement.className = 'bg-red-500 text-white p-4 rounded-xl soft-shadow animated-counter border border-red-400';
+                counterElement.className = 'bg-gradient-to-r from-red-500 to-pink-600 text-white p-4 rounded-2xl shadow-lg transform transition-all duration-300 hover:scale-105';
             }
         }
 
@@ -245,20 +67,20 @@
             
             // レスポンシブ対応のためのラッパー
             const gridWrapper = document.createElement('div');
-            gridWrapper.className = 'schedule-grid-mobile';
+            gridWrapper.className = 'space-y-4';
             
             // ヘッダー行を作成
             const headerRow = document.createElement('div');
-            headerRow.className = 'grid grid-cols-7 gap-2 md:gap-3 mb-4';
+            headerRow.className = 'grid grid-cols-7 gap-3 mb-6';
             
             const timeHeader = document.createElement('div');
-            timeHeader.className = 'schedule-header p-2 md:p-4 text-center font-bold rounded-lg soft-shadow text-xs md:text-base timetable-cell-mobile';
+            timeHeader.className = 'bg-gradient-to-r from-gray-50 to-gray-100 p-4 text-center font-bold rounded-xl border border-gray-200 text-gray-700';
             timeHeader.textContent = '時限';
             headerRow.appendChild(timeHeader);
             
             for (let day = 1; day <= 6; day++) {
                 const dayHeader = document.createElement('div');
-                dayHeader.className = 'schedule-header p-2 md:p-4 text-center font-bold rounded-lg soft-shadow text-xs md:text-base timetable-cell-mobile';
+                dayHeader.className = 'bg-gradient-to-r from-blue-50 to-indigo-50 p-4 text-center font-bold rounded-xl border border-blue-200 text-blue-700';
                 dayHeader.textContent = CoursesDB.getDayName(day) + '曜日';
                 headerRow.appendChild(dayHeader);
             }
@@ -267,18 +89,18 @@
             // 各時限の行を作成
             for (let period = 1; period <= 5; period++) {
                 const periodRow = document.createElement('div');
-                periodRow.className = 'grid grid-cols-7 gap-2 md:gap-3 mb-4';
+                periodRow.className = 'grid grid-cols-7 gap-3 mb-4';
                 
                 // 時限表示
                 const periodCell = document.createElement('div');
-                periodCell.className = 'period-cell p-2 md:p-4 text-center font-bold rounded-lg soft-shadow text-xs md:text-base timetable-cell-mobile';
+                periodCell.className = 'bg-gradient-to-r from-gray-100 to-gray-200 p-4 text-center font-bold rounded-xl border border-gray-300 text-gray-800';
                 periodCell.textContent = `${period}限`;
                 periodRow.appendChild(periodCell);
                 
                 // 各曜日のセル
                 for (let day = 1; day <= 6; day++) {
                     const dayCell = document.createElement('div');
-                    dayCell.className = 'border-2 border-transparent p-2 md:p-3 min-h-[80px] md:min-h-[120px] relative rounded-xl soft-shadow timetable-cell-mobile';
+                    dayCell.className = 'min-h-[120px] relative rounded-xl border-2 border-gray-200 p-3 transition-all duration-300';
                     
                     // ユーザーが履修登録した科目を取得
                     const registeredCourses = CoursesDB.getUserRegistrations(me.id)
@@ -289,15 +111,15 @@
                     if (registeredCourses.length > 0) {
                         registeredCourses.forEach(course => {
                             const courseDiv = document.createElement('div');
-                            courseDiv.className = 'course-card text-primary p-2 md:p-3 mb-2 rounded-lg relative soft-shadow';
+                            courseDiv.className = 'bg-white border border-gray-200 hover:border-blue-300 p-3 mb-2 rounded-lg relative shadow-sm hover:shadow-md transition-all duration-300 transform hover:-translate-y-1';
                             
                             courseDiv.innerHTML = `
-                                <div class="font-bold text-xs md:text-sm mb-1 leading-tight">${course.name}</div>
-                                <div class="text-xs text-secondary mb-1 hidden md:block">${course.instructor}</div>
-                                <div class="text-xs text-secondary mb-1 hidden md:block">${course.classroom}</div>
-                                <div class="text-xs font-semibold bg-blue-100 text-blue-800 inline-block px-1 md:px-2 py-1 rounded">${course.credits}単位</div>
+                                <div class="font-bold text-sm mb-1 text-gray-900 leading-tight">${course.name}</div>
+                                <div class="text-xs text-gray-600 mb-1 hidden md:block">${course.instructor}</div>
+                                <div class="text-xs text-gray-600 mb-1 hidden md:block">${course.classroom}</div>
+                                <div class="text-xs font-semibold bg-blue-100 text-blue-800 inline-block px-2 py-1 rounded-full">${course.credits}単位</div>
                                 <button onclick="clearCourse('${course.id}', '${course.name}')" 
-                                        class="absolute top-1 right-1 bg-red-500 hover:bg-red-600 text-white text-xs w-5 h-5 md:w-6 md:h-6 rounded-full flex items-center justify-center soft-shadow transition-all duration-200">
+                                        class="absolute top-2 right-2 bg-red-500 hover:bg-red-600 text-white text-xs w-6 h-6 rounded-full flex items-center justify-center shadow-sm hover:shadow-md transition-all duration-200 transform hover:scale-110">
                                     ×
                                 </button>
                             `;
@@ -306,13 +128,13 @@
                         });
                     } else {
                         // 空のセルの場合はクリックで科目選択モーダルを表示
-                        dayCell.className += ' empty-slot cursor-pointer hover:scale-105 transition-all duration-300';
+                        dayCell.className += ' border-dashed border-gray-300 hover:border-blue-400 hover:bg-blue-50 cursor-pointer transition-all duration-300 group';
                         dayCell.onclick = () => showCourseSelectionModal(day, period);
                         dayCell.innerHTML = `
                             <div class="text-center h-full flex items-center justify-center">
-                                <div>
-                                    <div class="text-2xl md:text-3xl mb-1 md:mb-2 text-gray-400">➕</div>
-                                    <div class="text-xs md:text-sm font-medium text-secondary">科目を追加</div>
+                                <div class="transition-all duration-300 group-hover:scale-110">
+                                    <div class="text-3xl mb-2 text-gray-400 group-hover:text-blue-500">➕</div>
+                                    <div class="text-sm font-medium text-gray-500 group-hover:text-blue-600">科目を追加</div>
                                 </div>
                             </div>
                         `;
@@ -349,7 +171,7 @@
             
             // モーダルを作成
             const modal = document.createElement('div');
-            modal.className = 'fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4';
+            modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4';
             modal.onclick = (e) => {
                 if (e.target === modal) {
                     document.body.removeChild(modal);
@@ -357,35 +179,45 @@
             };
             
             const modalContent = document.createElement('div');
-            modalContent.className = 'white-glass rounded-2xl p-4 md:p-8 max-w-lg w-full max-h-[90vh] md:max-h-[80vh] overflow-y-auto shadow-2xl modal-mobile';
+            modalContent.className = 'bg-white rounded-2xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-gray-200';
             
             modalContent.innerHTML = `
-                <div class="flex justify-between items-center mb-4 md:mb-6">
-                    <h3 class="text-lg md:text-xl font-bold text-primary">${CoursesDB.getDayName(dayOfWeek)}曜日 ${period}限の科目選択</h3>
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="text-xl font-bold text-gray-900">${CoursesDB.getDayName(dayOfWeek)}曜日 ${period}限の科目選択</h3>
                     <button onclick="document.body.removeChild(document.querySelector('.fixed.inset-0'))" 
-                            class="text-gray-600 hover:text-red-600 text-xl md:text-2xl font-bold transition-colors duration-200">&times;</button>
+                            class="text-gray-400 hover:text-red-500 text-2xl font-bold transition-colors duration-200 w-8 h-8 flex items-center justify-center hover:bg-gray-100 rounded-full">
+                        &times;
+                    </button>
                 </div>
-                <div class="space-y-3 md:space-y-4">
+                <div class="space-y-4">
                     ${availableCourses.map(course => {
                         const isRegistered = CoursesDB.isRegistered(me.id, course.id);
                         const buttonClass = isRegistered ? 
-                            'bg-gray-500 text-white cursor-not-allowed' : 
-                            'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer transform hover:scale-105';
+                            'bg-gray-400 text-white cursor-not-allowed' : 
+                            'bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white cursor-pointer transform hover:scale-105';
                         const buttonText = isRegistered ? '履修済み' : '履修登録';
                         
                         return `
-                            <div class="bg-white border border-gray-200 rounded-xl p-4 md:p-5 transition-all duration-300 hover:shadow-lg">
+                            <div class="bg-gradient-to-r from-white to-gray-50 border border-gray-200 rounded-xl p-5 transition-all duration-300 hover:shadow-lg hover:border-blue-300">
                                 <div class="flex justify-between items-start mb-3">
-                                    <h4 class="font-bold text-primary text-base md:text-lg leading-tight">${course.name}</h4>
-                                    <span class="text-xs md:text-sm bg-blue-100 text-blue-800 px-2 md:px-3 py-1 rounded-full font-semibold flex-shrink-0 ml-2">${course.credits}単位</span>
+                                    <h4 class="font-bold text-gray-900 text-lg leading-tight">${course.name}</h4>
+                                    <span class="text-sm bg-blue-100 text-blue-800 px-3 py-1 rounded-full font-semibold flex-shrink-0 ml-3">${course.credits}単位</span>
                                 </div>
-                                <p class="text-gray-600 text-sm mb-3 leading-relaxed">${course.description}</p>
-                                <div class="text-sm text-gray-500 mb-4 space-y-1">
-                                    <div class="flex items-center"><span class="mr-2">👨‍🏫</span>担当: ${course.instructor}</div>
-                                    <div class="flex items-center"><span class="mr-2">🏫</span>教室: ${course.classroom}</div>
+                                <p class="text-gray-600 text-sm mb-4 leading-relaxed">${course.description}</p>
+                                <div class="text-sm text-gray-500 mb-4 space-y-2">
+                                    <div class="flex items-center">
+                                        <span class="mr-2 text-lg">👨‍🏫</span>
+                                        <span class="font-medium">担当:</span>
+                                        <span class="ml-1">${course.instructor}</span>
+                                    </div>
+                                    <div class="flex items-center">
+                                        <span class="mr-2 text-lg">🏫</span>
+                                        <span class="font-medium">教室:</span>
+                                        <span class="ml-1">${course.classroom}</span>
+                                    </div>
                                 </div>
                                 <button onclick="selectCourseFromModal('${course.id}', '${course.name}')" 
-                                        class="${buttonClass} px-4 md:px-6 py-2 md:py-3 rounded-lg text-sm w-full font-semibold transition-all duration-200 shadow-lg"
+                                        class="${buttonClass} px-6 py-3 rounded-lg text-sm w-full font-semibold transition-all duration-200 shadow-md"
                                         ${isRegistered ? 'disabled' : ''}>
                                     ${buttonText}
                                 </button>
@@ -417,48 +249,76 @@
     </script>
 </head>
 
-<body class="bg-gray-50 min-h-screen">
-    <!-- Smart Header -->
-    <header class="smart-header">
-        <div class="smart-header-container">
-            <div class="smart-header-left">
-                <a href="index.html" class="smart-header-brand">
-                    <span class="smart-header-logo">🎓</span>
-                    <div>
-                        <h1 class="smart-header-title">SmartCampus</h1>
-                        <span class="smart-header-subtitle">履修登録システム</span>
+<body class="bg-gradient-to-br from-slate-50 to-blue-50 min-h-screen">
+    <!-- Modern Header with Tailwind -->
+    <header class="bg-white/95 backdrop-blur-lg border-b border-gray-200 sticky top-0 z-50 shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-16">
+                <!-- Left side -->
+                <div class="flex items-center space-x-8">
+                    <!-- Brand -->
+                    <a href="index.html" class="flex items-center space-x-3 text-gray-900 hover:text-blue-600 transition-colors">
+                        <span class="text-3xl">🎓</span>
+                        <div>
+                            <h1 class="text-xl font-bold">SmartCampus</h1>
+                            <span class="text-sm text-gray-500">履修登録システム</span>
+                        </div>
+                    </a>
+                    
+                    <!-- Navigation -->
+                    <nav class="hidden md:flex space-x-2">
+                        <a href="index.html" class="flex items-center px-3 py-2 rounded-lg text-sm font-medium bg-blue-100 text-blue-700 border border-blue-200">
+                            🏠 <span class="ml-1">ホーム</span>
+                        </a>
+                        <a href="schedule.html" class="flex items-center px-3 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors">
+                            📅 <span class="ml-1">時間割表</span>
+                        </a>
+                        <a href="courses.html" class="flex items-center px-3 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors">
+                            📚 <span class="ml-1">科目一覧</span>
+                        </a>
+                        <a href="admin_lib/initdb.html" class="flex items-center px-3 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors">
+                            ⚙️ <span class="ml-1">管理</span>
+                        </a>
+                    </nav>
+                </div>
+                
+                <!-- Right side -->
+                <div class="flex items-center space-x-4">
+                    <!-- User profile -->
+                    <div class="flex items-center space-x-2 px-3 py-2 rounded-lg bg-gray-50 hover:bg-gray-100 cursor-pointer transition-colors" onclick="showUserProfile()">
+                        <div class="w-8 h-8 rounded-full bg-gradient-to-r from-blue-500 to-indigo-600 flex items-center justify-center text-white text-sm font-bold" id="user-initials">👤</div>
+                        <span class="text-sm font-medium text-gray-700" id="user-name">Loading...</span>
                     </div>
-                </a>
-                <nav class="smart-header-nav">
-                    <a href="index.html" class="smart-header-nav-item active">
-                        🏠 <span>ホーム</span>
+                    <!-- Logout button -->
+                    <button onclick="logout()" class="px-4 py-2 text-sm font-medium text-white bg-red-500 hover:bg-red-600 rounded-lg transition-colors">
+                        ログアウト
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Mobile navigation -->
+            <div class="md:hidden pb-4">
+                <nav class="grid grid-cols-2 gap-2">
+                    <a href="index.html" class="flex items-center justify-center px-3 py-2 rounded-lg text-sm font-medium bg-blue-100 text-blue-700">
+                        🏠 ホーム
                     </a>
-                    <a href="schedule.html" class="smart-header-nav-item">
-                        📅 <span>時間割表</span>
+                    <a href="schedule.html" class="flex items-center justify-center px-3 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100">
+                        📅 時間割表
                     </a>
-                    <a href="courses.html" class="smart-header-nav-item">
-                        📚 <span>科目一覧</span>
+                    <a href="courses.html" class="flex items-center justify-center px-3 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100">
+                        📚 科目一覧
                     </a>
-                    <a href="admin_lib/initdb.html" class="smart-header-nav-item">
-                        ⚙️ <span>管理</span>
+                    <a href="admin_lib/initdb.html" class="flex items-center justify-center px-3 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100">
+                        ⚙️ 管理
                     </a>
                 </nav>
-            </div>
-            <div class="smart-header-right">
-                <div class="smart-header-user" onclick="showUserProfile()">
-                    <div class="smart-header-user-icon" id="user-initials">👤</div>
-                    <span class="smart-header-username" id="user-name">Loading...</span>
-                </div>
-                <button class="smart-header-logout" onclick="logout()">
-                    ログアウト
-                </button>
             </div>
         </div>
     </header>
 
     <!-- Floating Credits Counter -->
-    <div class="floating-stats">
-        <div id="credits-display" class="bg-blue-500 text-white p-4 rounded-xl shadow-lg animated-counter">
+    <div class="fixed top-20 right-4 z-40">
+        <div id="credits-display" class="bg-gradient-to-r from-blue-500 to-indigo-600 text-white p-4 rounded-2xl shadow-lg transform transition-all duration-300 hover:scale-105">
             <div class="text-center">
                 <div class="text-sm font-medium opacity-90">履修単位数</div>
                 <div class="text-3xl font-bold"><span id="credits-counter">0</span></div>
@@ -467,27 +327,36 @@
         </div>
     </div>
 
-    <!-- Schedule Grid -->
-    <main class="max-w-7xl mx-auto px-4 md:px-6 py-4 md:py-8">
-        <div class="bg-white rounded-2xl p-4 md:p-8 soft-shadow border border-gray-200">
-            <div class="flex flex-col lg:flex-row lg:items-center justify-between mb-6 md:mb-8">
-                <h2 class="text-xl md:text-2xl font-bold text-gray-900 flex flex-col lg:flex-row lg:items-center mb-2 lg:mb-0">
-                    📅 時間割管理
-                    <span class="text-sm text-gray-600 font-normal lg:ml-4 mt-1 lg:mt-0">セルをクリックして科目を登録・解除</span>
-                </h2>
-                <div class="text-gray-600 text-xs md:text-sm">
-                    💡 Tip: 空のセルをクリックで科目追加、×ボタンで削除
+    <!-- Main Content -->
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div class="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
+            <!-- Header -->
+            <div class="bg-gradient-to-r from-blue-50 to-indigo-50 px-6 py-8 border-b border-gray-100">
+                <div class="flex flex-col lg:flex-row lg:items-center justify-between">
+                    <div class="mb-4 lg:mb-0">
+                        <h2 class="text-2xl lg:text-3xl font-bold text-gray-900 flex items-center">
+                            📅 時間割管理
+                        </h2>
+                        <p class="text-gray-600 mt-2">セルをクリックして科目を登録・解除</p>
+                    </div>
+                    <div class="text-sm text-gray-500 bg-white px-4 py-2 rounded-lg border border-gray-200">
+                        💡 Tip: 空のセルをクリックで科目追加、×ボタンで削除
+                    </div>
                 </div>
             </div>
-            <div id="schedule-container" class="overflow-x-auto">
-                <!-- 時間割グリッドはJavaScriptで動的に生成されます -->
+            
+            <!-- Schedule Grid Container -->
+            <div class="p-6">
+                <div id="schedule-container" class="overflow-x-auto">
+                    <!-- 時間割グリッドはJavaScriptで動的に生成されます -->
+                </div>
             </div>
         </div>
-    </main>
+    </div>
 
     <!-- Floating Action Button -->
     <button onclick="window.open('schedule.html', '_blank')"
-        class="fixed bottom-6 md:bottom-8 right-6 md:right-8 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg w-12 h-12 md:w-16 md:h-16 flex items-center justify-center text-xl md:text-2xl transform hover:scale-110 transition-all duration-300 border border-blue-500 z-30">
+        class="fixed bottom-6 right-6 w-14 h-14 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded-full shadow-lg flex items-center justify-center text-2xl transform hover:scale-110 transition-all duration-300 z-30">
         📊
     </button>
 </body>
