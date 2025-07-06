@@ -1,0 +1,775 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SmartCampus - 科目一覧</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="lib/tailwind.css" rel="stylesheet">
+    <script type="text/javascript" src="lib/jquery.min.js"></script>
+    <script type="text/javascript" src="lib/osql.js"></script>
+    <script>
+        osql.requireLogin();
+
+        var me;
+        var allCourses = []; // 全科目データを保存
+        var filteredCourses = []; // 検索結果の科目データ
+        var currentPage = 1; // 現在のページ
+        var coursesPerPage = 9*3; // 1ページあたりの科目数
+        var currentSearchTerm = ''; // 現在の検索キーワード
+        var currentFilters = {
+            dayOfWeek: '',
+            period: '',
+            semester: '',
+            year: ''
+        }; // 現在のフィルター条件
+
+        $(document).ready(async function () {
+            me = await osql.getMe();
+            document.getElementById('user-name').innerText = me.lname + ' ' + me.fname;
+            document.getElementById('user-initials').innerText = (me.lname.charAt(0) + me.fname.charAt(0)).toUpperCase();
+            
+            await refreshCourses();
+        });
+
+        // ログアウト機能
+        function logout() {
+            if (confirm('ログアウトしますか？')) {
+                osql.logout();
+            }
+        }
+
+        // ユーザープロフィール表示
+        function showUserProfile() {
+            alert(`ユーザー情報:\n名前: ${me.lname} ${me.fname}\nID: ${me.id}`);
+        }
+
+        // 曜日番号を日本語に変換
+        function getDayName(dayOfWeek) {
+            const days = {
+                '1': '月',
+                '2': '火', 
+                '3': '水',
+                '4': '木',
+                '5': '金',
+                '6': '土',
+                '7': '日'
+            };
+            return days[dayOfWeek] || dayOfWeek;
+        }
+
+        // 科目一覧を取得・表示
+        async function refreshCourses() {
+            try {
+                const sql = 'SELECT * FROM classes ORDER BY year DESC, semester, day_of_week, period';
+                allCourses = await osql.connect(sql);
+                console.log('取得した科目:', allCourses);
+                
+                const coursesContainer = document.getElementById('courses-container');
+                
+                if (!allCourses || allCourses.length === 0) {
+                    coursesContainer.innerHTML = `
+                        <div class="text-center py-12">
+                            <div class="text-6xl mb-4">📚</div>
+                            <h3 class="text-xl font-semibold text-gray-700 mb-2">科目がまだ登録されていません</h3>
+                            <p class="text-gray-500">管理者にお問い合わせください。</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                // 統計情報を更新
+                updateStatistics(allCourses);
+                
+                // 年度フィルターオプションを初期化
+                initializeYearFilter();
+                
+                // 初期表示は全科目
+                filteredCourses = [...allCourses];
+                currentPage = 1;
+                
+                // ページネーション付きで科目を表示
+                renderCoursesPage();
+                updatePagination();
+                
+            } catch (error) {
+                console.error('科目取得エラー:', error);
+                document.getElementById('courses-container').innerHTML = `
+                    <div class="text-center py-12">
+                        <div class="text-6xl mb-4">⚠️</div>
+                        <h3 class="text-xl font-semibold text-red-600 mb-2">エラーが発生しました</h3>
+                        <p class="text-gray-500">科目データの取得に失敗しました。</p>
+                    </div>
+                `;
+            }
+        }
+
+        // ページごとの科目表示
+        function renderCoursesPage() {
+            const startIndex = (currentPage - 1) * coursesPerPage;
+            const endIndex = Math.min(startIndex + coursesPerPage, filteredCourses.length);
+            const coursesToShow = filteredCourses.slice(startIndex, endIndex);
+            
+            const coursesContainer = document.getElementById('courses-container');
+            
+            if (coursesToShow.length === 0) {
+                if (currentSearchTerm) {
+                    coursesContainer.innerHTML = `
+                        <div class="text-center py-12">
+                            <div class="text-6xl mb-4">🔍</div>
+                            <h3 class="text-xl font-semibold text-gray-700 mb-2">検索結果が見つかりません</h3>
+                            <p class="text-gray-500">「${currentSearchTerm}」に関する科目が見つかりませんでした。</p>
+                            <button onclick="clearSearch()" class="mt-4 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors">
+                                検索をクリア
+                            </button>
+                        </div>
+                    `;
+                } else {
+                    coursesContainer.innerHTML = `
+                        <div class="text-center py-12">
+                            <div class="text-6xl mb-4">📚</div>
+                            <h3 class="text-xl font-semibold text-gray-700 mb-2">科目がまだ登録されていません</h3>
+                            <p class="text-gray-500">管理者にお問い合わせください。</p>
+                        </div>
+                    `;
+                }
+                return;
+            }
+            
+            // 科目カードのHTML生成
+            let html = '<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">';
+            
+            coursesToShow.forEach(course => {
+                const dayName = getDayName(course.day_of_week);
+                html += `
+                    <div class="bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
+                        <!-- カードヘッダー -->
+                        <div class="bg-gradient-to-r from-blue-50 to-indigo-50 px-6 py-4 border-b border-gray-100">
+                            <div class="flex justify-between items-start">
+                                <h3 class="text-lg font-bold text-gray-900 leading-tight">${highlightSearchTerm(course.title)}</h3>
+                                <span class="bg-blue-100 text-blue-800 text-sm font-semibold px-3 py-1 rounded-full">${course.credit}単位</span>
+                            </div>
+                        </div>
+                        
+                        <!-- カード本体 -->
+                        <div class="p-6">
+                            <div class="space-y-3">
+                                <!-- 担当教員 -->
+                                <div class="flex items-center">
+                                    <div class="w-8 h-8 bg-gradient-to-r from-green-100 to-emerald-100 rounded-lg flex items-center justify-center mr-3">
+                                        <span class="text-green-600 text-sm">👨‍🏫</span>
+                                    </div>
+                                    <div>
+                                        <span class="text-sm text-gray-500">担当教員</span>
+                                        <p class="font-medium text-gray-900">${highlightSearchTerm(course.professor_name || 'TBA')}</p>
+                                    </div>
+                                </div>
+                                
+                                <!-- 開講時間 -->
+                                <div class="flex items-center">
+                                    <div class="w-8 h-8 bg-gradient-to-r from-purple-100 to-pink-100 rounded-lg flex items-center justify-center mr-3">
+                                        <span class="text-purple-600 text-sm">🕒</span>
+                                    </div>
+                                    <div>
+                                        <span class="text-sm text-gray-500">開講時間</span>
+                                        <p class="font-medium text-gray-900">${dayName}曜日 ${course.period}限</p>
+                                    </div>
+                                </div>
+                                
+                                <!-- 教室 -->
+                                <div class="flex items-center">
+                                    <div class="w-8 h-8 bg-gradient-to-r from-yellow-100 to-orange-100 rounded-lg flex items-center justify-center mr-3">
+                                        <span class="text-orange-600 text-sm">🏫</span>
+                                    </div>
+                                    <div>
+                                        <span class="text-sm text-gray-500">教室</span>
+                                        <p class="font-medium text-gray-900">${highlightSearchTerm(course.room_no || 'TBA')}</p>
+                                    </div>
+                                </div>
+                                
+                                <!-- 学期・年度 -->
+                                <div class="flex items-center">
+                                    <div class="w-8 h-8 bg-gradient-to-r from-indigo-100 to-blue-100 rounded-lg flex items-center justify-center mr-3">
+                                        <span class="text-indigo-600 text-sm">📅</span>
+                                    </div>
+                                    <div>
+                                        <span class="text-sm text-gray-500">開講学期</span>
+                                        <p class="font-medium text-gray-900">${course.year}年度 ${course.semester}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- カードフッター -->
+                        <div class="bg-gray-50 px-6 py-3 border-t border-gray-100">
+                            <div class="flex justify-between items-center">
+                                <span class="text-xs text-gray-500">科目ID: ${course.id}</span>
+                                <div class="flex space-x-1">
+                                    <span class="w-2 h-2 bg-blue-400 rounded-full"></span>
+                                    <span class="w-2 h-2 bg-green-400 rounded-full"></span>
+                                    <span class="w-2 h-2 bg-yellow-400 rounded-full"></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            html += '</div>';
+            coursesContainer.innerHTML = html;
+        }
+
+        // ページネーション更新
+        function updatePagination() {
+            const totalPages = Math.ceil(filteredCourses.length / coursesPerPage);
+            const paginationContainer = document.getElementById('pagination');
+            
+            if (totalPages <= 1) {
+                paginationContainer.style.display = 'none';
+                return;
+            }
+            
+            paginationContainer.style.display = 'flex';
+            paginationContainer.innerHTML = '';
+
+            // Previous button
+            const prevButton = document.createElement('button');
+            prevButton.className = `relative inline-flex items-center px-3 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 transition-colors ${currentPage === 1 ? 'cursor-not-allowed opacity-50' : ''}`;
+            prevButton.innerHTML = `
+                <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd" />
+                </svg>
+                <span class="sr-only">Previous</span>
+            `;
+            prevButton.disabled = currentPage === 1;
+            prevButton.onclick = () => {
+                if (currentPage > 1) {
+                    currentPage--;
+                    renderCoursesPage();
+                    updatePagination();
+                    scrollToTop();
+                }
+            };
+            paginationContainer.appendChild(prevButton);
+
+            // Page numbers
+            const startPage = Math.max(1, currentPage - 2);
+            const endPage = Math.min(totalPages, currentPage + 2);
+
+            if (startPage > 1) {
+                const firstPage = createPageButton(1, false);
+                paginationContainer.appendChild(firstPage);
+                
+                if (startPage > 2) {
+                    const ellipsis = document.createElement('span');
+                    ellipsis.className = 'relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700';
+                    ellipsis.textContent = '...';
+                    paginationContainer.appendChild(ellipsis);
+                }
+            }
+
+            for (let i = startPage; i <= endPage; i++) {
+                const pageButton = createPageButton(i, i === currentPage);
+                paginationContainer.appendChild(pageButton);
+            }
+
+            if (endPage < totalPages) {
+                if (endPage < totalPages - 1) {
+                    const ellipsis = document.createElement('span');
+                    ellipsis.className = 'relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700';
+                    ellipsis.textContent = '...';
+                    paginationContainer.appendChild(ellipsis);
+                }
+                
+                const lastPage = createPageButton(totalPages, false);
+                paginationContainer.appendChild(lastPage);
+            }
+
+            // Next button
+            const nextButton = document.createElement('button');
+            nextButton.className = `relative inline-flex items-center px-3 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 transition-colors ${currentPage === totalPages ? 'cursor-not-allowed opacity-50' : ''}`;
+            nextButton.innerHTML = `
+                <span class="sr-only">Next</span>
+                <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" />
+                </svg>
+            `;
+            nextButton.disabled = currentPage === totalPages;
+            nextButton.onclick = () => {
+                if (currentPage < totalPages) {
+                    currentPage++;
+                    renderCoursesPage();
+                    updatePagination();
+                    scrollToTop();
+                }
+            };
+            paginationContainer.appendChild(nextButton);
+
+            // ページ情報を表示
+            const pageInfo = document.getElementById('page-info');
+            if (pageInfo) {
+                const startItem = (currentPage - 1) * coursesPerPage + 1;
+                const endItem = Math.min(currentPage * coursesPerPage, filteredCourses.length);
+                const searchText = currentSearchTerm ? ` (検索: "${currentSearchTerm}")` : '';
+                pageInfo.textContent = `${startItem}-${endItem} / ${filteredCourses.length}件${searchText}`;
+            }
+        }
+
+        // ページボタン作成
+        function createPageButton(pageNumber, isActive) {
+            const button = document.createElement('button');
+            button.className = isActive 
+                ? 'z-10 bg-indigo-50 border-indigo-500 text-indigo-600 relative inline-flex items-center px-4 py-2 border text-sm font-medium'
+                : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50 relative inline-flex items-center px-4 py-2 border text-sm font-medium transition-colors';
+            button.textContent = pageNumber;
+            button.onclick = () => {
+                currentPage = pageNumber;
+                renderCoursesPage();
+                updatePagination();
+                scrollToTop();
+            };
+            return button;
+        }
+
+        // ページトップにスクロール
+        function scrollToTop() {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        // 検索機能
+        function performSearch(searchTerm) {
+            currentSearchTerm = searchTerm.trim().toLowerCase();
+            applyFiltersAndSearch();
+        }
+
+        // フィルターと検索を適用
+        function applyFiltersAndSearch() {
+            currentPage = 1; // フィルター/検索時は1ページ目に戻る
+            
+            filteredCourses = allCourses.filter(course => {
+                // 検索キーワードでフィルタリング
+                let matchesSearch = true;
+                if (currentSearchTerm) {
+                    const title = (course.title || '').toLowerCase();
+                    const professor = (course.professor_name || '').toLowerCase();
+                    const room = (course.room_no || '').toLowerCase();
+                    const semester = (course.semester || '').toLowerCase();
+                    const year = (course.year || '').toString();
+                    
+                    matchesSearch = title.includes(currentSearchTerm) ||
+                                   professor.includes(currentSearchTerm) ||
+                                   room.includes(currentSearchTerm) ||
+                                   semester.includes(currentSearchTerm) ||
+                                   year.includes(currentSearchTerm);
+                }
+                
+                // フィルター条件でフィルタリング
+                let matchesFilters = true;
+                
+                if (currentFilters.dayOfWeek && course.day_of_week != currentFilters.dayOfWeek) {
+                    matchesFilters = false;
+                }
+                
+                if (currentFilters.period && course.period != currentFilters.period) {
+                    matchesFilters = false;
+                }
+                
+                if (currentFilters.semester && course.semester !== currentFilters.semester) {
+                    matchesFilters = false;
+                }
+                
+                if (currentFilters.year && course.year != currentFilters.year) {
+                    matchesFilters = false;
+                }
+                
+                return matchesSearch && matchesFilters;
+            });
+            
+            // フィルター状態を更新
+            updateFilterStatus();
+            
+            // 検索結果に基づいて統計を更新
+            updateStatistics(filteredCourses);
+            
+            // 表示を更新
+            renderCoursesPage();
+            updatePagination();
+        }
+
+        // フィルター変更ハンドラー
+        function handleFilterChange(filterType, value) {
+            currentFilters[filterType] = value;
+            applyFiltersAndSearch();
+        }
+
+        // 全フィルターをクリア
+        function clearAllFilters() {
+            currentFilters = {
+                dayOfWeek: '',
+                period: '',
+                semester: '',
+                year: ''
+            };
+            
+            // UIもリセット
+            document.getElementById('filter-day').value = '';
+            document.getElementById('filter-period').value = '';
+            document.getElementById('filter-semester').value = '';
+            document.getElementById('filter-year').value = '';
+            document.getElementById('search-input').value = '';
+            
+            currentSearchTerm = '';
+            applyFiltersAndSearch();
+        }
+
+        // 年度フィルターを初期化
+        function initializeYearFilter() {
+            const yearSelect = document.getElementById('filter-year');
+            const years = [...new Set(allCourses.map(course => course.year))].sort((a, b) => b - a);
+            
+            // 既存のオプション（「全年度」以外）をクリア
+            while (yearSelect.children.length > 1) {
+                yearSelect.removeChild(yearSelect.lastChild);
+            }
+            
+            // 年度オプションを追加
+            years.forEach(year => {
+                if (year) {
+                    const option = document.createElement('option');
+                    option.value = year;
+                    option.textContent = `${year}年度`;
+                    yearSelect.appendChild(option);
+                }
+            });
+        }
+
+        // フィルター状態を更新
+        function updateFilterStatus() {
+            const statusElement = document.getElementById('filter-status');
+            const activeFilters = [];
+            
+            if (currentFilters.dayOfWeek) {
+                const dayNames = {'1': '月', '2': '火', '3': '水', '4': '木', '5': '金', '6': '土', '7': '日'};
+                activeFilters.push(`${dayNames[currentFilters.dayOfWeek]}曜日`);
+            }
+            
+            if (currentFilters.period) {
+                activeFilters.push(`${currentFilters.period}限`);
+            }
+            
+            if (currentFilters.semester) {
+                activeFilters.push(currentFilters.semester);
+            }
+            
+            if (currentFilters.year) {
+                activeFilters.push(`${currentFilters.year}年度`);
+            }
+            
+            if (currentSearchTerm) {
+                activeFilters.push(`検索: "${currentSearchTerm}"`);
+            }
+            
+            if (activeFilters.length > 0) {
+                statusElement.textContent = `適用中: ${activeFilters.join(', ')}`;
+                statusElement.className = 'text-sm text-blue-600 font-medium';
+            } else {
+                statusElement.textContent = 'フィルターなし';
+                statusElement.className = 'text-sm text-gray-500';
+            }
+        }
+
+        // 検索キーワードをハイライト
+        function highlightSearchTerm(text) {
+            if (!currentSearchTerm || !text) return text;
+            
+            const regex = new RegExp(`(${currentSearchTerm})`, 'gi');
+            return text.replace(regex, '<mark class="bg-yellow-200 px-1 rounded">$1</mark>');
+        }
+
+        // 検索をクリア
+        function clearSearch() {
+            document.getElementById('search-input').value = '';
+            currentSearchTerm = '';
+            applyFiltersAndSearch();
+        }
+
+        // リアルタイム検索
+        function handleSearchInput(event) {
+            const searchTerm = event.target.value;
+            
+            // デバウンス処理（300ms後に検索実行）
+            clearTimeout(window.searchTimeout);
+            window.searchTimeout = setTimeout(() => {
+                performSearch(searchTerm);
+            }, 300);
+        }
+
+        // Enter キーでの検索
+        function handleSearchKeypress(event) {
+            if (event.key === 'Enter') {
+                clearTimeout(window.searchTimeout);
+                performSearch(event.target.value);
+            }
+        }
+
+        // 統計情報を更新
+        function updateStatistics(courses) {
+            const totalCourses = courses.length;
+            const totalCredits = courses.reduce((sum, course) => sum + parseInt(course.credit), 0);
+            const uniqueProfessors = new Set(courses.map(course => course.professor_name)).size;
+            
+            document.getElementById('total-courses').textContent = totalCourses;
+            document.getElementById('total-credits').textContent = totalCredits;
+            document.getElementById('total-professors').textContent = uniqueProfessors;
+        }
+    </script>
+</head>
+
+<body class="bg-gradient-to-br from-slate-50 to-blue-50 min-h-screen">
+    <!-- Modern Header with Tailwind -->
+    <header class="bg-white/95 backdrop-blur-lg border-b border-gray-200 sticky top-0 z-50 shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-16">
+                <!-- Left side -->
+                <div class="flex items-center space-x-8">
+                    <!-- Brand -->
+                    <a href="index.html" class="flex items-center space-x-3 text-gray-900 hover:text-blue-600 transition-colors">
+                        <span class="text-3xl">🎓</span>
+                        <div>
+                            <h1 class="text-xl font-bold">SmartCampus</h1>
+                            <span class="text-sm text-gray-500">科目一覧</span>
+                        </div>
+                    </a>
+                    
+                    <!-- Navigation -->
+                    <nav class="hidden md:flex space-x-2">
+                        <a href="index.html" class="flex items-center px-3 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors">
+                            🏠 <span class="ml-1">ホーム</span>
+                        </a>
+                        <a href="schedule.html" class="flex items-center px-3 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors">
+                            📅 <span class="ml-1">時間割表</span>
+                        </a>
+                        <a href="courses.html" class="flex items-center px-3 py-2 rounded-lg text-sm font-medium bg-blue-100 text-blue-700 border border-blue-200">
+                            📚 <span class="ml-1">科目一覧</span>
+                        </a>
+                        <a href="admin_lib/initdb.html" class="flex items-center px-3 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors">
+                            ⚙️ <span class="ml-1">管理</span>
+                        </a>
+                    </nav>
+                </div>
+                
+                <!-- Right side -->
+                <div class="flex items-center space-x-4">
+                    <!-- User profile -->
+                    <div class="flex items-center space-x-2 px-3 py-2 rounded-lg bg-gray-50 hover:bg-gray-100 cursor-pointer transition-colors" onclick="showUserProfile()">
+                        <div class="w-8 h-8 rounded-full bg-gradient-to-r from-blue-500 to-indigo-600 flex items-center justify-center text-white text-sm font-bold" id="user-initials">👤</div>
+                        <span class="text-sm font-medium text-gray-700" id="user-name">Loading...</span>
+                    </div>
+                    <!-- Logout button -->
+                    <button onclick="logout()" class="px-4 py-2 text-sm font-medium text-white bg-red-500 hover:bg-red-600 rounded-lg transition-colors">
+                        ログアウト
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Mobile navigation -->
+            <div class="md:hidden pb-4">
+                <nav class="grid grid-cols-2 gap-2">
+                    <a href="index.html" class="flex items-center justify-center px-3 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100">
+                        🏠 ホーム
+                    </a>
+                    <a href="schedule.html" class="flex items-center justify-center px-3 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100">
+                        📅 時間割表
+                    </a>
+                    <a href="courses.html" class="flex items-center justify-center px-3 py-2 rounded-lg text-sm font-medium bg-blue-100 text-blue-700">
+                        📚 科目一覧
+                    </a>
+                    <a href="admin_lib/initdb.html" class="flex items-center justify-center px-3 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100">
+                        ⚙️ 管理
+                    </a>
+                </nav>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <!-- Header Section -->
+        <div class="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden mb-8">
+            <div class="bg-gradient-to-r from-blue-50 to-indigo-50 px-6 py-8 border-b border-gray-100">
+                <div class="flex flex-col lg:flex-row lg:items-center justify-between">
+                    <div class="mb-4 lg:mb-0">
+                        <h2 class="text-2xl lg:text-3xl font-bold text-gray-900 flex items-center mb-2">
+                            📚 科目一覧
+                        </h2>
+                        <p class="text-gray-600">開講されている全科目の詳細情報</p>
+                    </div>
+                    
+                    <!-- 検索バー -->
+                    <div class="flex items-center space-x-4">
+                        <div class="relative">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <svg class="h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd" />
+                                </svg>
+                            </div>
+                            <input 
+                                type="text" 
+                                id="search-input"
+                                placeholder="科目名、教員名、教室で検索..." 
+                                class="block w-full sm:w-80 pl-10 pr-3 py-2 border border-gray-300 rounded-lg leading-5 bg-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                oninput="handleSearchInput(event)"
+                                onkeypress="handleSearchKeypress(event)"
+                            />
+                        </div>
+                        <button 
+                            onclick="clearSearch()" 
+                            class="px-4 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors whitespace-nowrap"
+                            title="検索をクリア"
+                        >
+                            クリア
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- フィルターバー -->
+                <div class="mt-6 pt-6 border-t border-gray-200">
+                    <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                        <div class="flex flex-wrap items-center gap-3">
+                            <span class="text-sm font-medium text-gray-700">絞り込み:</span>
+                            
+                            <!-- 曜日フィルター -->
+                            <select id="filter-day" class="text-sm border border-gray-300 rounded-lg px-3 py-1.5 bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500" onchange="handleFilterChange('dayOfWeek', this.value)">
+                                <option value="">全曜日</option>
+                                <option value="1">月曜日</option>
+                                <option value="2">火曜日</option>
+                                <option value="3">水曜日</option>
+                                <option value="4">木曜日</option>
+                                <option value="5">金曜日</option>
+                                <option value="6">土曜日</option>
+                                <option value="7">日曜日</option>
+                            </select>
+                            
+                            <!-- 時限フィルター -->
+                            <select id="filter-period" class="text-sm border border-gray-300 rounded-lg px-3 py-1.5 bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500" onchange="handleFilterChange('period', this.value)">
+                                <option value="">全時限</option>
+                                <option value="1">1限</option>
+                                <option value="2">2限</option>
+                                <option value="3">3限</option>
+                                <option value="4">4限</option>
+                                <option value="5">5限</option>
+                                <option value="6">6限</option>
+                                <option value="7">7限</option>
+                            </select>
+                            
+                            <!-- 学期フィルター -->
+                            <select id="filter-semester" class="text-sm border border-gray-300 rounded-lg px-3 py-1.5 bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500" onchange="handleFilterChange('semester', this.value)">
+                                <option value="">全学期</option>
+                                <option value="前期">前期</option>
+                                <option value="後期">後期</option>
+                                <option value="通年">通年</option>
+                                <option value="集中">集中講義</option>
+                            </select>
+                            
+                            <!-- 年度フィルター -->
+                            <select id="filter-year" class="text-sm border border-gray-300 rounded-lg px-3 py-1.5 bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500" onchange="handleFilterChange('year', this.value)">
+                                <option value="">全年度</option>
+                                <!-- 年度オプションは動的に生成されます -->
+                            </select>
+                        </div>
+                        
+                        <div class="flex items-center space-x-3">
+                            <span id="filter-status" class="text-sm text-gray-500"></span>
+                            <button 
+                                onclick="clearAllFilters()" 
+                                class="px-3 py-1.5 text-sm font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                                title="全てクリア"
+                            >
+                                <svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                                </svg>
+                                全てクリア
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Statistics Cards -->
+            <div class="p-6">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <!-- Total Courses -->
+                    <div class="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4 border border-blue-100">
+                        <div class="flex items-center">
+                            <div class="w-12 h-12 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center text-white text-xl mr-4">
+                                📚
+                            </div>
+                            <div>
+                                <p class="text-sm text-gray-600 font-medium">総科目数</p>
+                                <p class="text-2xl font-bold text-gray-900" id="total-courses">0</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Total Credits -->
+                    <div class="bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl p-4 border border-green-100">
+                        <div class="flex items-center">
+                            <div class="w-12 h-12 bg-gradient-to-r from-green-500 to-emerald-600 rounded-xl flex items-center justify-center text-white text-xl mr-4">
+                                🎯
+                            </div>
+                            <div>
+                                <p class="text-sm text-gray-600 font-medium">総単位数</p>
+                                <p class="text-2xl font-bold text-gray-900" id="total-credits">0</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Total Professors -->
+                    <div class="bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl p-4 border border-purple-100">
+                        <div class="flex items-center">
+                            <div class="w-12 h-12 bg-gradient-to-r from-purple-500 to-pink-600 rounded-xl flex items-center justify-center text-white text-xl mr-4">
+                                👨‍🏫
+                            </div>
+                            <div>
+                                <p class="text-sm text-gray-600 font-medium">担当教員数</p>
+                                <p class="text-2xl font-bold text-gray-900" id="total-professors">0</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Courses Grid -->
+        <div id="courses-container" class="min-h-[400px]">
+            <!-- 科目カードがここに動的に挿入されます -->
+            <div class="text-center py-12">
+                <div class="text-6xl mb-4">⏳</div>
+                <h3 class="text-xl font-semibold text-gray-700 mb-2">読み込み中...</h3>
+                <p class="text-gray-500">科目データを取得しています。</p>
+            </div>
+        </div>
+
+        <!-- Pagination -->
+        <div class="mt-8 flex items-center justify-between">
+            <!-- Page Info -->
+            <div class="flex items-center text-sm text-gray-700">
+                <span id="page-info">表示中: 0-0 / 0件</span>
+            </div>
+            
+            <!-- Pagination Controls -->
+            <nav id="pagination" class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" style="display: none;">
+                <!-- ページネーションボタンがここに動的に挿入されます -->
+            </nav>
+        </div>
+    </div>
+
+    <!-- Floating Action Button -->
+    <button onclick="window.open('index.html', '_self')"
+        class="fixed bottom-6 right-6 w-14 h-14 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded-full shadow-lg flex items-center justify-center text-2xl transform hover:scale-110 transition-all duration-300 z-30">
+        🏠
+    </button>
+</body>
+
+</html>
