@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DB初期化</title>
+    <link rel="stylesheet" href="../style.css">
+    <script src="../lib/jquery.min.js"></script>
+    <script src="../lib/osql.js"></script>
+    <script src="../isapp.js"></script>
+    <script>
+        osql.requireLogin();
+        $(document).ready(init);
+
+        async function init() {
+            await isapp.initUser();
+            // ユーザー情報を取得してヘッダーに表示
+            const me = await osql.getMe();
+            document.getElementById('header-username').innerText = me.lname + ' ' + me.fname;
+            document.getElementById('user-initials').innerText = (me.lname.charAt(0) + me.fname.charAt(0)).toUpperCase();
+        }
+
+        const initSQL = `
+-- 簡素化されたテーブル構造
+-- 外部キー制約のため、依存関係の逆順で削除
+DROP TABLE IF EXISTS selections;
+DROP TABLE IF EXISTS projects;
+DROP TABLE IF EXISTS classes;
+DROP TABLE IF EXISTS users;
+
+-- usersテーブル
+CREATE TABLE users (
+    id VARCHAR(255) PRIMARY KEY,
+    fname VARCHAR(255) NOT NULL,
+    lname VARCHAR(255) NOT NULL,
+    role VARCHAR(255) NOT NULL
+);
+
+-- classesテーブル
+CREATE TABLE classes (
+    id VARCHAR(255) PRIMARY KEY,
+    year INT NOT NULL,
+    day_of_week VARCHAR(10) NOT NULL,
+    period INT NOT NULL,
+    semester VARCHAR(20) NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    credit INT NOT NULL,
+    professor_name VARCHAR(255) NOT NULL,
+    room_no VARCHAR(50) NOT NULL
+);
+
+-- projectsテーブル
+CREATE TABLE projects (
+    id VARCHAR(255) PRIMARY KEY,
+    user_id VARCHAR(255) NOT NULL,
+    year INT NOT NULL,
+    semester VARCHAR(20) NOT NULL,
+    public BOOLEAN NOT NULL DEFAULT FALSE,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+-- selectionsテーブル
+CREATE TABLE selections (
+    id VARCHAR(255) PRIMARY KEY,
+    project_id VARCHAR(255) NOT NULL,
+    class_id VARCHAR(255) NOT NULL,
+    FOREIGN KEY (project_id) REFERENCES projects(id),
+    FOREIGN KEY (class_id) REFERENCES classes(id)
+);
+`;
+        async function initializeDatabase() {
+            showStatusMessage();
+            const statusEl = $('#status-message');
+            const button = $('button[onclick="initializeDatabase()"]');
+            
+            // ボタンを無効化
+            button.prop('disabled', true).html('⏳ 処理中...');
+            
+            statusEl.html('<div style="color: #3b82f6; font-weight: 600;">📋 データベース初期化を開始しています...</div><br>');
+            
+            try {
+                // 現在のユーザー情報を取得
+                statusEl.append('<div style="color: #6b7280;">👤 現在のユーザー情報を取得中...</div>');
+                const me = await osql.getMe();
+                if (!me) {
+                    throw new Error('ユーザー情報の取得に失敗しました');
+                }
+                statusEl.append(`<div style="color: #059669; margin-left: 1rem;">✅ ユーザー情報取得完了: ${me.lname} ${me.fname} (${me.id})</div><br>`);
+                
+                // テーブル作成SQL実行
+                const sqlStatements = initSQL.split(';').map(s => s.trim()).filter(s => s.length > 0);
+                const totalStatements = sqlStatements.length + 1; // +1 for user insertion
+
+                for (let i = 0; i < sqlStatements.length; i++) {
+                    const sql = sqlStatements[i];
+                    const progress = Math.round(((i + 1) / totalStatements) * 100);
+                    
+                    statusEl.append(`<div style="color: #6b7280;">🔄 実行中: ${sql.substring(0, 60)}${sql.length > 60 ? '...' : ''}</div>`);
+                    
+                    const result = await osql.connect(sql, false);
+                    if (result.status === 200) {
+                        statusEl.append(`<div style="color: #059669; margin-left: 1rem;">✅ 成功 (進捗: ${progress}%)</div><br>`);
+                    } else {
+                        statusEl.append(`<div style="color: #dc2626; margin-left: 1rem;">❌ 失敗: ${result.message}</div><br>`);
+                        console.error(result);
+                        throw new Error(result.message);
+                    }
+                }
+                
+                // 現在のユーザー情報をusersテーブルに挿入
+                statusEl.append('<div style="color: #6b7280;">👤 現在のユーザー情報をデータベースに挿入中...</div>');
+                const insertUserSQL = `INSERT INTO users (id, fname, lname, role) VALUES ('${me.id}', '${me.fname}', '${me.lname}', 'admin')`;
+                const userResult = await osql.connect(insertUserSQL, false);
+                
+                if (userResult.status === 200) {
+                    statusEl.append(`<div style="color: #059669; margin-left: 1rem;">✅ ユーザー情報挿入完了 (進捗: 100%)</div><br>`);
+                } else {
+                    statusEl.append(`<div style="color: #dc2626; margin-left: 1rem;">❌ ユーザー情報挿入失敗: ${userResult.message}</div><br>`);
+                    console.error(userResult);
+                    throw new Error(userResult.message);
+                }
+                
+                statusEl.append('<div style="background: #d1fae5; color: #065f46; padding: 1rem; border-radius: 0.5rem; border: 1px solid #a7f3d0; margin-top: 1rem; font-weight: 600;">🎉 データベース初期化が正常に完了しました！</div>');
+                
+                button.html('✅ 初期化完了').css('background', '#059669');
+                
+            } catch (error) {
+                statusEl.append(`<div style="background: #fee2e2; color: #991b1b; padding: 1rem; border-radius: 0.5rem; border: 1px solid #fecaca; margin-top: 1rem; font-weight: 600;">❌ エラーが発生しました: ${error.message}</div>`);
+                console.error(error);
+                
+                button.prop('disabled', false).html('🔄 再試行').css('background', '#dc2626');
+            }
+        }
+
+        // CSV読み込み機能
+        let currentFile = null;
+        
+        function handleCSVFile(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            currentFile = file;
+            loadCSVWithEncoding();
+        }
+        
+        function loadCSVWithEncoding() {
+            if (!currentFile) return;
+            
+            const encoding = document.getElementById('encoding-select').value;
+            const previewEl = document.getElementById('csv-preview');
+            
+            // 読み込み中の表示
+            previewEl.innerHTML = '<div style="color: #6b7280;">📖 ファイルを読み込み中...</div>';
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const csv = e.target.result;
+                    parseAndPreviewCSV(csv);
+                } catch (error) {
+                    previewEl.innerHTML = `<div style="color: #dc2626;">❌ ファイル読み込みエラー: ${error.message}</div>
+                        <p style="color: #6b7280; font-size: 0.875rem;">文字コードを変更して再度お試しください。</p>`;
+                }
+            };
+            
+            reader.onerror = function() {
+                previewEl.innerHTML = `<div style="color: #dc2626;">❌ ファイル読み込みに失敗しました</div>
+                    <p style="color: #6b7280; font-size: 0.875rem;">文字コードを変更して再度お試しください。</p>`;
+            };
+            
+            // 選択された文字コードでファイルを読み込む
+            try {
+                if (encoding === 'utf-8') {
+                    reader.readAsText(currentFile, 'UTF-8');
+                } else if (encoding === 'shift_jis') {
+                    reader.readAsText(currentFile, 'Shift_JIS');
+                } else if (encoding === 'euc-jp') {
+                    reader.readAsText(currentFile, 'EUC-JP');
+                } else {
+                    reader.readAsText(currentFile, 'UTF-8'); // デフォルト
+                }
+            } catch (error) {
+                previewEl.innerHTML = `<div style="color: #dc2626;">❌ 文字コード "${encoding}" での読み込みに失敗しました</div>`;
+            }
+        }
+
+        function parseAndPreviewCSV(csvText) {
+            const lines = csvText.trim().split('\n');
+            const previewEl = document.getElementById('csv-preview');
+            const importBtn = document.getElementById('import-csv-btn');
+            const hasHeader = document.getElementById('header-option').value === 'true';
+            
+            if (lines.length === 0 || (hasHeader && lines.length < 2)) {
+                previewEl.innerHTML = '<div style="color: #dc2626;">❌ CSVファイルが空または無効です</div>';
+                importBtn.style.display = 'none';
+                return;
+            }
+            
+            // CSVパース（簡易版）
+            const parseCSVLine = (line) => {
+                const result = [];
+                let current = '';
+                let inQuotes = false;
+                
+                for (let i = 0; i < line.length; i++) {
+                    const char = line[i];
+                    if (char === '"') {
+                        inQuotes = !inQuotes;
+                    } else if (char === ',' && !inQuotes) {
+                        result.push(current.trim());
+                        current = '';
+                    } else {
+                        current += char;
+                    }
+                }
+                result.push(current.trim());
+                return result;
+            };
+            
+            let headers;
+            let rows;
+            
+            if (hasHeader) {
+                // ヘッダー行がある場合
+                headers = parseCSVLine(lines[0]);
+                rows = lines.slice(1).map(line => parseCSVLine(line));
+            } else {
+                // ヘッダー行がない場合
+                const firstRow = parseCSVLine(lines[0]);
+                // デフォルトヘッダーを列番号で生成（Col1, Col2, ...）
+                headers = Array.from({ length: firstRow.length }, (_, i) => `列${i+1}`);
+                rows = lines.map(line => parseCSVLine(line));
+            }
+            
+            // プレビュー表示
+            let html = '<h4>📋 CSVプレビュー</h4>';
+            html += '<div style="overflow-x: auto; margin: 1rem 0;">';
+            html += '<table style="width: 100%; border-collapse: collapse; font-size: 0.875rem;">';
+            html += '<thead><tr>';
+            headers.forEach(header => {
+                html += `<th style="border: 1px solid #e5e7eb; padding: 0.5rem; background: #f9fafb; font-weight: 600;">${header}</th>`;
+            });
+            html += '</tr></thead><tbody>';
+            
+            rows.slice(0, 5).forEach(row => {
+                html += '<tr>';
+                row.forEach(cell => {
+                    html += `<td style="border: 1px solid #e5e7eb; padding: 0.5rem;">${cell}</td>`;
+                });
+                html += '</tr>';
+            });
+            
+            if (rows.length > 5) {
+                html += `<tr><td colspan="${headers.length}" style="border: 1px solid #e5e7eb; padding: 0.5rem; text-align: center; color: #6b7280; font-style: italic;">... 他 ${rows.length - 5} 件</td></tr>`;
+            }
+            
+            html += '</tbody></table></div>';
+            html += `<div style="color: #6b7280; font-size: 0.875rem;">📊 合計: ${rows.length} 件のレコード</div>`;
+            
+            previewEl.innerHTML = html;
+            importBtn.style.display = 'block';
+            
+            // グローバル変数に保存
+            window.csvData = { headers, rows, hasHeader };
+        }
+
+        async function importCSVData() {
+            if (!window.csvData) {
+                alert('CSVデータが読み込まれていません');
+                return;
+            }
+            
+            const statusEl = document.getElementById('csv-status');
+            const importBtn = document.getElementById('import-csv-btn');
+            
+            statusEl.style.display = 'block';
+            statusEl.innerHTML = '<div style="color: #3b82f6; font-weight: 600;">📥 CSVデータをインポート中...</div><br>';
+            importBtn.disabled = true;
+            
+            try {
+                const { rows } = window.csvData;
+                let successCount = 0;
+                let errorCount = 0;
+                
+                // 文字コードと設定情報を表示
+                const encoding = document.getElementById('encoding-select').value;
+                const hasHeader = document.getElementById('header-option').value === 'true';
+                
+                statusEl.append(`<div style="color: #6b7280;">ℹ️ 文字コード: ${encoding}, ヘッダー行: ${hasHeader ? 'あり' : 'なし'}</div><br>`);
+                
+                for (let i = 0; i < rows.length; i++) {
+                    const row = rows[i];
+                    const progress = Math.round(((i + 1) / rows.length) * 100);
+                    const rowNum = hasHeader ? i + 2 : i + 1; // ヘッダー行がある場合は実際の行番号を調整
+                    
+                    // 必要なフィールドのマッピング
+                    // 想定: year, day_of_week, period, semester, title, credit, professor_name, room_no
+                    if (row.length < 8) {
+                        statusEl.append(`<div style="color: #dc2626;">❌ 行 ${rowNum}: 列数が不足しています (${row.length}/8)</div>`);
+                        errorCount++;
+                        continue;
+                    }
+                    
+                    // SQLインジェクション対策のためにシングルクォートをエスケープ
+                    const escapedValues = row.map(val => {
+                        if (typeof val === 'string') {
+                            return val.replace(/'/g, "''");
+                        }
+                        return val;
+                    });
+                    
+                    // UUIDを自動生成してIDとして使用
+                    const uuid = crypto.randomUUID();
+                    
+                    // year, day_of_week, period, semester, title, credit, professor_name, room_no
+                    const insertSQL = `INSERT INTO classes (id, year, day_of_week, period, semester, title, credit, professor_name, room_no) 
+                        VALUES ('${uuid}', ${escapedValues[0]}, '${escapedValues[1]}', ${escapedValues[2]}, '${escapedValues[3]}', '${escapedValues[4]}', ${escapedValues[5]}, '${escapedValues[6]}', '${escapedValues[7]}')`;
+                    
+                    try {
+                        const result = await osql.connect(insertSQL, false);
+                        if (result.status === 200) {
+                            successCount++;
+                            if (i % 10 === 0 || i === rows.length - 1) {
+                                statusEl.append(`<div style="color: #059669;">✅ ${successCount} 件処理完了 (進捗: ${progress}%)</div>`);
+                            }
+                        } else {
+                            statusEl.append(`<div style="color: #dc2626;">❌ 行 ${rowNum}: ${result.message}</div>`);
+                            errorCount++;
+                        }
+                    } catch (error) {
+                        statusEl.append(`<div style="color: #dc2626;">❌ 行 ${rowNum}: ${error.message}</div>`);
+                        errorCount++;
+                    }
+                }
+                
+                statusEl.append(`<div style="background: #d1fae5; color: #065f46; padding: 1rem; border-radius: 0.5rem; border: 1px solid #a7f3d0; margin-top: 1rem; font-weight: 600;">🎉 インポート完了！成功: ${successCount}件、失敗: ${errorCount}件</div>`);
+                
+            } catch (error) {
+                statusEl.append(`<div style="background: #fee2e2; color: #991b1b; padding: 1rem; border-radius: 0.5rem; border: 1px solid #fecaca; margin-top: 1rem; font-weight: 600;">❌ エラーが発生しました: ${error.message}</div>`);
+            } finally {
+                importBtn.disabled = false;
+            }
+        }
+    </script>
+</head>
+
+<body>
+    <!-- Smart Header -->
+    <header class="smart-header">
+        <div class="smart-header-container">
+            <div class="smart-header-left">
+                <a href="../index.html" class="smart-header-brand">
+                    <span class="smart-header-logo">🛠️</span>
+                    <div>
+                        <h1 class="smart-header-title">SmartCampus</h1>
+                        <span class="smart-header-subtitle">システム管理</span>
+                    </div>
+                </a>
+                <nav class="smart-header-nav">
+                    <a href="../index.html" class="smart-header-nav-item">
+                        🏠 <span>ホーム</span>
+                    </a>
+                    <a href="../items/index.html" class="smart-header-nav-item">
+                        📦 <span>在庫管理</span>
+                    </a>
+                    <a href="../history/index.html" class="smart-header-nav-item">
+                        📋 <span>履歴</span>
+                    </a>
+                    <a href="initdb.html" class="smart-header-nav-item active">
+                        ⚙️ <span>DB初期化</span>
+                    </a>
+                </nav>
+            </div>
+            <div class="smart-header-right">
+                <div class="smart-header-user" onclick="isapp.openUserProfile('..')">
+                    <div class="smart-header-user-icon" id="user-initials">👤</div>
+                    <span class="smart-header-username" id="header-username">Loading...</span>
+                </div>
+                <button class="smart-header-logout" onclick="isapp.logout()">
+                    ログアウト
+                </button>
+            </div>
+        </div>
+    </header>
+    
+    <!-- Smart Breadcrumb -->
+    <nav class="smart-breadcrumb">
+        <div class="smart-breadcrumb-container">
+            <a href="../index.html">ホーム</a>
+            <span class="smart-breadcrumb-separator">></span>
+            <a href="index.html">システム管理</a>
+            <span class="smart-breadcrumb-separator">></span>
+            <span class="smart-breadcrumb-current">データベース初期化</span>
+        </div>
+    </nav>
+    <div class="container">
+        <div class="admin-card">
+            <h1>データベース初期化</h1>
+            <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 0.5rem; padding: 1rem; margin: 1rem 0;">
+                <div style="display: flex; align-items: center; gap: 0.5rem; color: #dc2626; font-weight: 600; margin-bottom: 0.5rem;">
+                    ⚠️ 重要な警告
+                </div>
+                <p style="color: #7f1d1d; margin: 0; font-size: 0.875rem;">
+                    この操作により既存のデータは全て削除されます。実行前に必ずバックアップを取得してください。
+                </p>
+            </div>
+            <button onclick="initializeDatabase()" style="background: #dc2626; margin: 1rem 0;">
+                🗄️ データベース初期化を実行
+            </button>
+            <div id="status-message" style="display: none;">実行ログがここに表示されます...</div>
+        </div>
+        
+        <div class="admin-card">
+            <h2>📥 CSVインポート</h2>
+            <div style="background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 0.5rem; padding: 1rem; margin: 1rem 0;">
+                <div style="display: flex; align-items: center; gap: 0.5rem; color: #0369a1; font-weight: 600; margin-bottom: 0.5rem;">
+                    ℹ️ CSVフォーマット
+                </div>
+                <p style="color: #0c4a6e; margin: 0; font-size: 0.875rem;">
+                    列順: id, year, day_of_week, period, semester, title, credit, professor_name, room_no<br>
+                    例: "CS101",2024,"月",1,"前期","プログラミング基礎",2,"田中太郎","A101"
+                </p>
+            </div>
+            
+            <div style="background: #fefce8; border: 1px solid #fde047; border-radius: 0.5rem; padding: 1rem; margin: 1rem 0;">
+                <div style="display: flex; align-items: center; gap: 0.5rem; color: #a16207; font-weight: 600; margin-bottom: 0.5rem;">
+                    💡 インポート設定のヒント
+                </div>
+                <ul style="color: #a16207; margin: 0 0 0.5rem 0; padding-left: 1.5rem; font-size: 0.875rem;">
+                    <li><strong>文字コード</strong>: 文字化けする場合は別の文字コードを選択</li>
+                    <li><strong>ヘッダー行</strong>: Excelなどで列名がある場合は「あり」を選択</li>
+                </ul>
+                <p style="color: #a16207; margin: 0; font-size: 0.875rem;">
+                    CSVファイルを選択後、プレビューで内容を確認してからインポートしてください
+                </p>
+            </div>
+            
+            <div style="margin: 1rem 0;">
+                <div style="display: flex; flex-wrap: wrap; gap: 1rem; margin-bottom: 1rem;">
+                    <div style="flex: 1; min-width: 200px;">
+                        <label for="encoding-select" style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #374151;">
+                            🌐 文字コード
+                        </label>
+                        <select id="encoding-select" onchange="loadCSVWithEncoding()" style="display: block; width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 0.5rem; background: white;">
+                            <option value="utf-8">UTF-8 (推奨)</option>
+                            <option value="shift_jis">Shift_JIS (Windows標準)</option>
+                            <option value="euc-jp">EUC-JP (Unix系)</option>
+                        </select>
+                        <p style="color: #6b7280; font-size: 0.75rem; margin-top: 0.25rem;">
+                            文字化けした場合は別の文字コードをお試しください
+                        </p>
+                    </div>
+                    
+                    <div style="flex: 1; min-width: 200px;">
+                        <label for="header-option" style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #374151;">
+                            📋 ヘッダー行
+                        </label>
+                        <select id="header-option" onchange="loadCSVWithEncoding()" style="display: block; width: 100%; padding: 0.5rem; border: 1px solid #d1d5db; border-radius: 0.5rem; background: white;">
+                            <option value="true">あり（1行目をヘッダーとして使用）</option>
+                            <option value="false">なし（全ての行をデータとして使用）</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <label for="csv-file" style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #374151;">
+                    📁 CSVファイルを選択
+                </label>
+                <input type="file" id="csv-file" accept=".csv" onchange="handleCSVFile(event)" 
+                       style="display: block; width: 100%; padding: 0.5rem; border: 2px dashed #d1d5db; border-radius: 0.5rem; background: #f9fafb;">
+            </div>
+            
+            <div id="csv-preview" style="margin: 1rem 0;"></div>
+            
+            <button id="import-csv-btn" onclick="importCSVData()" 
+                    style="background: #059669; color: white; padding: 0.75rem 1.5rem; border: none; border-radius: 0.5rem; font-weight: 600; display: none; margin: 1rem 0;">
+                📥 CSVデータをインポート
+            </button>
+            
+            <div id="csv-status" style="display: none; margin-top: 1rem;"></div>
+        </div>
+        
+        <div class="admin-card">
+            <h2 style="border-bottom: 2px solid #e5e7eb; padding-bottom: 0.75rem;">その他のツール</h2>
+            <div style="display: flex; align-items: center; justify-content: space-between; padding: 1rem; background: #f9fafb; border-radius: 0.5rem; border: 1px solid #e5e7eb;">
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <div style="width: 48px; height: 48px; background: #3b82f6; border-radius: 0.75rem; display: flex; align-items: center; justify-content: center; font-size: 1.5rem;">
+                        🗄️
+                    </div>
+                    <div>
+                        <h3 style="margin: 0; color: #1f2937; font-weight: 600;">dbkisoサーバ</h3>
+                        <p style="margin: 0; color: #6b7280; font-size: 0.875rem;">データベース管理サーバにアクセス</p>
+                    </div>
+                </div>
+                <a href="https://dbkiso.si.aoyama.ac.jp" target="_blank" 
+                   style="background: #3b82f6; color: white; padding: 0.5rem 1rem; border-radius: 0.375rem; font-weight: 600; font-size: 0.875rem; text-decoration: none;">
+                    アクセス →
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ステータスメッセージの表示制御
+        function showStatusMessage() {
+            const statusEl = document.getElementById('status-message');
+            statusEl.style.display = 'block';
+            statusEl.innerHTML = '';
+        }
+    </script>
+</body>
+
+</html>
