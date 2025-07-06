@@ -31,6 +31,14 @@
         .custom-scrollbar::-webkit-scrollbar-thumb:hover {
             background: #a8a8a8;
         }
+        
+        /* Custom amber colors if not available in Tailwind */
+        .bg-amber-500 {
+            background-color: #f59e0b !important;
+        }
+        .border-amber-600 {
+            border-color: #d97706 !important;
+        }
     </style>
     <script type="text/javascript" src="lib/jquery.min.js"></script>
     <script type="text/javascript" src="lib/osql.js"></script>
@@ -315,17 +323,34 @@
 
         async function updateCreditsCounter() {
             const totalCredits = await calculateTotalCredits();
-            document.getElementById('credits-counter').innerText = totalCredits;
             
-            // 単位数に応じてカウンターの色を変更
+            // 単位数に応じてカウンターの色と内容を更新（高コントラスト配色）
             const counterElement = document.getElementById('credits-display');
+            
+            // 背景色とボーダー色を決定
+            let bgClass, borderClass;
             if (totalCredits >= 20) {
-                counterElement.className = 'bg-gradient-to-r from-green-500 to-emerald-600 text-white p-4 rounded-2xl shadow-lg transform transition-all duration-300 hover:scale-105';
+                bgClass = 'bg-green-600';
+                borderClass = 'border-green-700';
             } else if (totalCredits >= 10) {
-                counterElement.className = 'bg-gradient-to-r from-yellow-500 to-orange-600 text-white p-4 rounded-2xl shadow-lg transform transition-all duration-300 hover:scale-105';
+                bgClass = 'bg-amber-500';
+                borderClass = 'border-amber-600';
             } else {
-                counterElement.className = 'bg-gradient-to-r from-red-500 to-pink-600 text-white p-4 rounded-2xl shadow-lg transform transition-all duration-300 hover:scale-105';
+                bgClass = 'bg-red-600';
+                borderClass = 'border-red-700';
             }
+            
+            // クラス名を更新
+            counterElement.className = `${bgClass} text-white p-4 rounded-2xl shadow-xl border-2 ${borderClass} transform transition-all duration-300 hover:scale-105 hover:shadow-2xl`;
+            
+            // 内容も更新して確実に表示
+            counterElement.innerHTML = `
+                <div class="text-center">
+                    <div class="text-sm font-bold opacity-95">履修単位数</div>
+                    <div class="text-3xl font-black">${totalCredits}</div>
+                    <div class="text-xs font-semibold opacity-90">単位</div>
+                </div>
+            `;
         }
 
         function loadScheduleGrid() {
@@ -886,12 +911,8 @@
 
     <!-- Floating Credits Counter -->
     <div class="fixed top-20 right-4 z-40">
-        <div id="credits-display" class="bg-gradient-to-r from-blue-500 to-indigo-600 text-white p-4 rounded-2xl shadow-lg transform transition-all duration-300 hover:scale-105">
-            <div class="text-center">
-                <div class="text-sm font-medium opacity-90">履修単位数</div>
-                <div class="text-3xl font-bold"><span id="credits-counter">0</span></div>
-                <div class="text-xs opacity-80">単位</div>
-            </div>
+        <div id="credits-display" class="bg-red-600 text-white p-4 rounded-2xl shadow-xl border-2 border-red-700 transform transition-all duration-300 hover:scale-105 hover:shadow-2xl">
+            <!-- 内容はJavaScriptで動的に設定されます -->
         </div>
     </div>
 
