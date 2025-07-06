@@ -17,7 +17,7 @@
         var allCourses = []; // 全科目データを保存
         var filteredCourses = []; // 検索結果の科目データ
         var currentPage = 1; // 現在のページ
-        var coursesPerPage = 9*3; // 1ページあたりの科目数
+        var coursesPerPage = 9*2; // 1ページあたりの科目数
         var currentSearchTerm = ''; // 現在の検索キーワード
         var currentFilters = {
             dayOfWeek: '',
@@ -196,7 +196,7 @@
                                     </div>
                                     <div>
                                         <span class="text-sm text-gray-500">開講学期</span>
-                                        <p class="font-medium text-gray-900">${course.year}年度 ${course.semester}</p>
+                                        <p class="font-medium text-gray-900">${course.year}年度 ${course.semester == 1 ? '前期' : course.semester == 2 ? '後期' : course.semester}</p>
                                     </div>
                                 </div>
                             </div>
@@ -376,7 +376,7 @@
                     matchesFilters = false;
                 }
                 
-                if (currentFilters.semester && course.semester !== currentFilters.semester) {
+                if (currentFilters.semester && course.semester != currentFilters.semester) {
                     matchesFilters = false;
                 }
                 
@@ -667,10 +667,8 @@
                             <!-- 学期フィルター -->
                             <select id="filter-semester" class="text-sm border border-gray-300 rounded-lg px-3 py-1.5 bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500" onchange="handleFilterChange('semester', this.value)">
                                 <option value="">全学期</option>
-                                <option value="前期">前期</option>
-                                <option value="後期">後期</option>
-                                <option value="通年">通年</option>
-                                <option value="集中">集中講義</option>
+                                <option value="1">前期</option>
+                                <option value="2">後期</option>
                             </select>
                             
                             <!-- 年度フィルター -->

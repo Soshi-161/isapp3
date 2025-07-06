@@ -368,11 +368,27 @@
     </div>
 
     <script>
-        // ウェルカム名前を設定
-        $(document).ready(function() {
-            if (me && me.fname) {
-                document.getElementById('welcome-name').innerText = me.fname + 'さん';
+        // ログアウト機能
+        function logout() {
+            if (confirm('ログアウトしますか？')) {
+                osql.logout();
             }
+        }
+
+        // ユーザープロフィール表示
+        function showUserProfile() {
+            const user = isapp.currentUser;
+            alert(`ユーザー情報:\n名前: ${user.lname} ${user.fname}\nID: ${user.id}`);
+        }
+
+        // ウェルカム名前を設定
+        $(document).ready(async function() {
+            // updateDashboard関数の後で実行されるように遅延
+            setTimeout(() => {
+                if (isapp.currentUser && isapp.currentUser.fname) {
+                    document.getElementById('welcome-name').innerText = isapp.currentUser.fname + 'さん';
+                }
+            }, 1000);
         });
     </script>
 </body>
