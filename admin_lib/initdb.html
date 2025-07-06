@@ -9,7 +9,7 @@
     <link href="../lib/tailwind.css" rel="stylesheet">
     <script src="../lib/jquery.min.js"></script>
     <script src="../lib/osql.js"></script>
-    <script src="../isapp.js"></script>
+    <script src="../lib/isapp.js"></script>
     <script>
         osql.requireLogin();
         $(document).ready(init);
@@ -56,7 +56,7 @@ CREATE TABLE projects (
     id VARCHAR(255) PRIMARY KEY,
     user_id VARCHAR(255) NOT NULL,
     year INT NOT NULL,
-    semester VARCHAR(20) NOT NULL,
+    semester INT NOT NULL,
     public BOOLEAN NOT NULL DEFAULT FALSE,
     FOREIGN KEY (user_id) REFERENCES users(id)
 );

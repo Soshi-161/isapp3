@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SmartCampus - 時間割表</title>
+    <link href="lib/tailwind.css" rel="stylesheet">
+    <script type="text/javascript" src="lib/jquery.min.js"></script>
+    <script type="text/javascript" src="lib/osql.js"></script>
+    <script type="text/javascript" src="lib/isapp.js"></script>
+    <script>
+        osql.requireLogin();
+
+        var allCourses = []; // 全科目データを保存
+        var userRegistrations = []; // ユーザーの履修登録データ
+        var currentProjectId = null; // 現在選択中のプロジェクトID
+        var userProjects = []; // ユーザーのプロジェクト一覧
+
+        $(document).ready(async function () {
+            try{
+                // ユーザー初期化とヘッダー設定
+                await isapp.initUser();
+                isapp.ui.setUserHeader(isapp.currentUser);
+                
+                // 全科目データを取得
+                allCourses = await isapp.courses.getAllCourses();
+                console.log('取得した科目:', allCourses);
+                
+                // ユーザーのプロジェクト一覧を取得
+                await loadUserProjects();
+                
+                // 最新のプロジェクトを自動選択するか、なければ新規作成を促す
+                if (userProjects.length > 0) {
+                    await selectProject(userProjects[0].id);
+                } else {
+                    userRegistrations = [];
+                }
+                
+            } catch (error) {
+                console.error('データベース接続エラー:', error);
+                isapp.ui.showError('データベースに接続できません。後ほど再試行してください。');
+                return;
+            }
+            
+            // プロジェクト選択UI を生成
+            loadProjectSelector();
+            // 時間割グリッドを生成
+            loadScheduleGrid();
+            // 単位数カウンターを更新
+            updateCreditsCounter();
+        });
+
+        // ログアウト機能
+        function logout() {
+            if (confirm('ログアウトしますか？')) {
+                osql.logout();
+            }
+        }
+
+        // ユーザープロフィール表示
+        function showUserProfile() {
+            const user = isapp.currentUser;
+            alert(`ユーザー情報:\n名前: ${user.lname} ${user.fname}\nID: ${user.id}`);
+        }
+
+        // ユーザーのプロジェクト一覧を読み込み
+        async function loadUserProjects() {
+            try {
+                userProjects = await isapp.projects.getUserProjects();
+                console.log('ユーザープロジェクト:', userProjects);
+            } catch (error) {
+                console.log('プロジェクトテーブルが存在しないか、エラーが発生しました:', error);
+                userProjects = [];
+            }
+        }
+
+        // プロジェクト選択
+        async function selectProject(projectId) {
+            currentProjectId = projectId;
+            
+            try {
+                // 選択されたプロジェクトの履修科目を取得
+                userRegistrations = await isapp.selections.getProjectSelections(projectId);
+                console.log('プロジェクト履修データ:', userRegistrations);
+                
+                // UIを更新
+                loadScheduleGrid();
+                updateCreditsCounter();
+                updateProjectSelector();
+            } catch (error) {
+                console.error('プロジェクト選択エラー:', error);
+                userRegistrations = [];
+            }
+        }
+
+        // プロジェクト選択UIの生成
+        function loadProjectSelector() {
+            const container = document.getElementById('project-selector');
+            if (!container) return;
+
+            container.innerHTML = '';
+            
+            if (userProjects.length === 0) {
+                container.innerHTML = `
+                    <div class="flex items-center space-x-4">
+                        <span class="text-gray-500">時間割プロジェクトがありません</span>
+                        <button onclick="createNewProject()" 
+                                class="px-4 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-lg text-sm font-medium hover:from-blue-600 hover:to-indigo-700 transition-all duration-200">
+                            新規作成
+                        </button>
+                    </div>
+                `;
+                return;
+            }
+
+            const selectElement = document.createElement('select');
+            selectElement.className = 'px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500';
+            selectElement.onchange = (e) => selectProject(e.target.value);
+
+            userProjects.forEach(project => {
+                const option = document.createElement('option');
+                option.value = project.id;
+                const semesterName = isapp.utils.getSemesterName(project.semester);
+                const publicStatus = project.public ? '公開' : '非公開';
+                option.textContent = `${project.year}年度 ${semesterName} (${publicStatus})`;
+                option.selected = project.id === currentProjectId;
+                selectElement.appendChild(option);
+            });
+
+            container.innerHTML = `
+                <div class="flex items-center space-x-4">
+                    <label class="text-sm font-medium text-gray-700">時間割選択:</label>
+                    <div id="project-select-container"></div>
+                    <button onclick="createNewProject()" 
+                            class="px-3 py-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-lg text-sm font-medium hover:from-green-600 hover:to-emerald-700 transition-all duration-200">
+                        ➕ 新規
+                    </button>
+                </div>
+            `;
+            
+            document.getElementById('project-select-container').appendChild(selectElement);
+        }
+
+        // プロジェクト選択UIの更新
+        function updateProjectSelector() {
+            const selectElement = document.querySelector('#project-select-container select');
+            if (selectElement) {
+                selectElement.value = currentProjectId;
+            }
+        }
+
+        // 新規プロジェクト作成モーダルを表示
+        function createNewProject() {
+            const modal = document.createElement('div');
+            modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4';
+            modal.onclick = (e) => {
+                if (e.target === modal) {
+                    document.body.removeChild(modal);
+                }
+            };
+            
+            const modalContent = document.createElement('div');
+            modalContent.className = 'bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl border border-gray-200';
+            
+            const currentYear = new Date().getFullYear();
+            
+            modalContent.innerHTML = `
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="text-xl font-bold text-gray-900 flex items-center">
+                        <span class="mr-2">📋</span>新しい時間割プロジェクトを作成
+                    </h3>
+                    <button onclick="document.body.removeChild(this.closest('.fixed'))" 
+                            class="text-gray-400 hover:text-red-500 text-2xl font-bold transition-colors duration-200 w-8 h-8 flex items-center justify-center hover:bg-gray-100 rounded-full">
+                        &times;
+                    </button>
+                </div>
+                
+                <form id="project-form" class="space-y-4">
+                    <!-- 年度選択 -->
+                    <div>
+                        <label for="project-year" class="block text-sm font-semibold text-gray-700 mb-2">
+                            📅 年度
+                        </label>
+                        <select id="project-year" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors">
+                            <option value="${currentYear - 1}">${currentYear - 1}年度</option>
+                            <option value="${currentYear}" selected>${currentYear}年度</option>
+                            <option value="${currentYear + 1}">${currentYear + 1}年度</option>
+                        </select>
+                    </div>
+                    
+                    <!-- 学期選択 -->
+                    <div>
+                        <label for="project-semester" class="block text-sm font-semibold text-gray-700 mb-2">
+                            🌸 学期
+                        </label>
+                        <select id="project-semester" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors">
+                            <option value="1">前期</option>
+                            <option value="2">後期</option>
+                        </select>
+                    </div>
+                    
+                    <!-- 公開設定 -->
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">
+                            🌐 公開設定
+                        </label>
+                        <div class="space-y-2">
+                            <label class="flex items-center">
+                                <input type="radio" name="project-public" value="false" checked class="mr-2 text-blue-600 focus:ring-blue-500">
+                                <span class="text-sm text-gray-700">🔒 非公開（自分のみ）</span>
+                            </label>
+                            <label class="flex items-center">
+                                <input type="radio" name="project-public" value="true" class="mr-2 text-blue-600 focus:ring-blue-500">
+                                <span class="text-sm text-gray-700">🌍 公開（他のユーザーも閲覧可能）</span>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <!-- プレビュー -->
+                    <div class="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                        <div class="text-sm font-medium text-gray-700 mb-1">プレビュー:</div>
+                        <div id="project-preview" class="text-sm text-gray-600">
+                            ${currentYear}年度 前期 (非公開)
+                        </div>
+                    </div>
+                    
+                    <!-- ボタン -->
+                    <div class="flex space-x-3 pt-4">
+                        <button type="button" onclick="document.body.removeChild(this.closest('.fixed'))" 
+                                class="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors">
+                            キャンセル
+                        </button>
+                        <button type="submit" 
+                                class="flex-1 px-4 py-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-lg hover:from-green-600 hover:to-emerald-700 transition-all duration-200 transform hover:scale-105 font-semibold">
+                            ✨ 作成
+                        </button>
+                    </div>
+                </form>
+            `;
+            
+            modal.appendChild(modalContent);
+            document.body.appendChild(modal);
+            
+            // プレビュー更新のイベントリスナー
+            const updatePreview = () => {
+                const year = document.getElementById('project-year').value;
+                const semester = document.getElementById('project-semester').value;
+                const isPublic = document.querySelector('input[name="project-public"]:checked').value === 'true';
+                
+                const semesterName = semester === '1' ? '前期' : '後期';
+                const publicStatus = isPublic ? '公開' : '非公開';
+                
+                document.getElementById('project-preview').textContent = `${year}年度 ${semesterName} (${publicStatus})`;
+            };
+            
+            // イベントリスナーを追加
+            document.getElementById('project-year').addEventListener('change', updatePreview);
+            document.getElementById('project-semester').addEventListener('change', updatePreview);
+            document.querySelectorAll('input[name="project-public"]').forEach(radio => {
+                radio.addEventListener('change', updatePreview);
+            });
+            
+            // フォーム送信処理
+            document.getElementById('project-form').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                await submitNewProject();
+            });
+        }
+        
+        // プロジェクト作成実行
+        async function submitNewProject() {
+            const year = parseInt(document.getElementById('project-year').value);
+            const semester = parseInt(document.getElementById('project-semester').value);
+            const isPublic = document.querySelector('input[name="project-public"]:checked').value === 'true';
+            
+            try {
+                const projectData = {
+                    year: year,
+                    semester: semester,
+                    public: isPublic
+                };
+                
+                const newProject = await isapp.projects.createProject(projectData);
+                
+                // モーダルを閉じる
+                const modal = document.querySelector('.fixed.inset-0');
+                if (modal) {
+                    document.body.removeChild(modal);
+                }
+                
+                // プロジェクト一覧を再読み込みして新しいプロジェクトを選択
+                await loadUserProjects();
+                await selectProject(newProject.id);
+                loadProjectSelector();
+                
+                const semesterName = semester === 1 ? '前期' : '後期';
+                const publicStatus = isPublic ? '公開' : '非公開';
+                alert(`新しい時間割プロジェクト「${year}年度 ${semesterName} (${publicStatus})」を作成しました！`);
+                
+            } catch (error) {
+                console.error('プロジェクト作成エラー:', error);
+                alert('プロジェクトの作成に失敗しました。');
+            }
+        }
+
+
+
+        // 総単位数を計算
+        async function calculateTotalCredits() {
+            return await isapp.courses.calculateTotalCredits(userRegistrations, allCourses);
+        }
+
+        async function updateCreditsCounter() {
+            const totalCredits = await calculateTotalCredits();
+            document.getElementById('credits-counter').innerText = totalCredits;
+            
+            // 単位数に応じてカウンターの色を変更
+            const counterElement = document.getElementById('credits-display');
+            if (totalCredits >= 20) {
+                counterElement.className = 'bg-gradient-to-r from-green-500 to-emerald-600 text-white p-4 rounded-2xl shadow-lg transform transition-all duration-300 hover:scale-105';
+            } else if (totalCredits >= 10) {
+                counterElement.className = 'bg-gradient-to-r from-yellow-500 to-orange-600 text-white p-4 rounded-2xl shadow-lg transform transition-all duration-300 hover:scale-105';
+            } else {
+                counterElement.className = 'bg-gradient-to-r from-red-500 to-pink-600 text-white p-4 rounded-2xl shadow-lg transform transition-all duration-300 hover:scale-105';
+            }
+        }
+
+        function loadScheduleGrid() {
+            const scheduleContainer = document.getElementById('schedule-container');
+            scheduleContainer.innerHTML = '';
+            
+            // レスポンシブ対応のためのラッパー
+            const gridWrapper = document.createElement('div');
+            gridWrapper.className = 'space-y-4';
+            
+            // ヘッダー行を作成
+            const headerRow = document.createElement('div');
+            headerRow.className = 'grid grid-cols-7 gap-3 mb-6';
+            
+            const timeHeader = document.createElement('div');
+            timeHeader.className = 'bg-gradient-to-r from-gray-50 to-gray-100 p-4 text-center font-bold rounded-xl border border-gray-200 text-gray-700';
+            timeHeader.textContent = '時限';
+            headerRow.appendChild(timeHeader);
+            
+            for (let day = 1; day <= 6; day++) {
+                const dayHeader = document.createElement('div');
+                dayHeader.className = 'bg-gradient-to-r from-blue-50 to-indigo-50 p-4 text-center font-bold rounded-xl border border-blue-200 text-blue-700';
+                dayHeader.textContent = isapp.utils.getDayName(day) + '曜日';
+                headerRow.appendChild(dayHeader);
+            }
+            gridWrapper.appendChild(headerRow);
+            
+            // 各時限の行を作成
+            for (let period = 1; period <= 5; period++) {
+                const periodRow = document.createElement('div');
+                periodRow.className = 'grid grid-cols-7 gap-3 mb-4';
+                
+                // 時限表示
+                const periodCell = document.createElement('div');
+                periodCell.className = 'bg-gradient-to-r from-gray-100 to-gray-200 p-4 text-center font-bold rounded-xl border border-gray-300 text-gray-800';
+                periodCell.textContent = `${period}限`;
+                periodRow.appendChild(periodCell);
+                
+                // 各曜日のセル
+                for (let day = 1; day <= 6; day++) {
+                    const dayCell = document.createElement('div');
+                    dayCell.className = 'min-h-[120px] relative rounded-xl border-2 border-gray-200 p-3 transition-all duration-300';
+                    
+                    // その日その時限の履修登録済み科目を取得
+                    const registeredCourses = allCourses.filter(course => 
+                        userRegistrations.includes(course.id) && 
+                        course.day_of_week == day && 
+                        course.period == period
+                    );
+                    
+                    // 履修登録済みの科目がある場合
+                    if (registeredCourses.length > 0) {
+                        registeredCourses.forEach(course => {
+                            const courseDiv = document.createElement('div');
+                            courseDiv.className = 'bg-white border border-gray-200 hover:border-blue-300 p-3 mb-2 rounded-lg relative shadow-sm hover:shadow-md transition-all duration-300 transform hover:-translate-y-1';
+                            
+                            courseDiv.innerHTML = `
+                                <div class="font-bold text-sm mb-1 text-gray-900 leading-tight">${course.title || course.class_name}</div>
+                                <div class="text-xs text-gray-600 mb-1 hidden md:block">${course.professor_name || 'TBA'}</div>
+                                <div class="text-xs text-gray-600 mb-1 hidden md:block">${course.room_no || 'TBA'}</div>
+                                <div class="text-xs font-semibold bg-blue-100 text-blue-800 inline-block px-2 py-1 rounded-full">${course.credit || 0}単位</div>
+                                <button onclick="unregisterCourse('${course.id}', '${course.title || course.class_name}')" 
+                                        class="absolute top-2 right-2 bg-red-500 hover:bg-red-600 text-white text-xs w-6 h-6 rounded-full flex items-center justify-center shadow-sm hover:shadow-md transition-all duration-200 transform hover:scale-110">
+                                    ×
+                                </button>
+                            `;
+                            
+                            dayCell.appendChild(courseDiv);
+                        });
+                    } else {
+                        // 空のセルの場合はクリックで科目選択モーダルを表示
+                        dayCell.className += ' border-dashed border-gray-300 hover:border-blue-400 hover:bg-blue-50 cursor-pointer transition-all duration-300 group';
+                        dayCell.onclick = () => showCourseSelectionModal(day, period);
+                        dayCell.innerHTML = `
+                            <div class="text-center h-full flex items-center justify-center">
+                                <div class="transition-all duration-300 group-hover:scale-110">
+                                    <div class="text-3xl mb-2 text-gray-400 group-hover:text-blue-500">➕</div>
+                                    <div class="text-sm font-medium text-gray-500 group-hover:text-blue-600">科目を追加</div>
+                                </div>
+                            </div>
+                        `;
+                    }
+                    
+                    periodRow.appendChild(dayCell);
+                }
+                
+                gridWrapper.appendChild(periodRow);
+            }
+            
+            scheduleContainer.appendChild(gridWrapper);
+        }
+
+        function unregisterCourse(courseId, courseName) {
+            if (!currentProjectId) {
+                alert('時間割プロジェクトが選択されていません。');
+                return;
+            }
+
+            if (confirm(`「${courseName}」の履修登録を解除しますか？`)) {
+                unregisterCourseFromDB(courseId, courseName);
+            }
+        }
+
+        async function unregisterCourseFromDB(courseId, courseName) {
+            try {
+                // selectionsテーブルから削除
+                await isapp.selections.removeSelection(currentProjectId, courseId);
+                
+                // ローカルデータも更新
+                userRegistrations = userRegistrations.filter(id => id != courseId);
+                
+                alert(`「${courseName}」の履修登録を解除しました。`);
+                
+                // 画面を更新
+                loadScheduleGrid();
+                updateCreditsCounter();
+                
+            } catch (error) {
+                console.error('履修登録解除エラー:', error);
+                alert('履修登録の解除に失敗しました。');
+            }
+        }
+
+        function showCourseSelectionModal(dayOfWeek, period) {
+            // 選択された時間に開講される科目を取得
+            const availableCourses = allCourses.filter(course => 
+                course.day_of_week == dayOfWeek && course.period == period
+            );
+            
+            // もし科目がない場合
+            if (availableCourses.length === 0) {
+                alert(`${isapp.utils.getDayName(dayOfWeek)}曜日${period}限には開講科目がありません。`);
+                return;
+            }
+            
+            // モーダルを作成
+            const modal = document.createElement('div');
+            modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4';
+            modal.onclick = (e) => {
+                if (e.target === modal) {
+                    document.body.removeChild(modal);
+                }
+            };
+            
+            const modalContent = document.createElement('div');
+            modalContent.className = 'bg-white rounded-2xl p-6 max-w-2xl w-full max-h-[90vh] flex flex-col shadow-2xl border border-gray-200';
+            
+            modalContent.innerHTML = `
+                <div class="flex justify-between items-center mb-6 flex-shrink-0">
+                    <h3 class="text-xl font-bold text-gray-900">${isapp.utils.getDayName(dayOfWeek)}曜日 ${period}限の科目選択</h3>
+                    <button onclick="document.body.removeChild(document.querySelector('.fixed.inset-0'))" 
+                            class="text-gray-400 hover:text-red-500 text-2xl font-bold transition-colors duration-200 w-8 h-8 flex items-center justify-center hover:bg-gray-100 rounded-full">
+                        &times;
+                    </button>
+                </div>
+                <div class="overflow-y-auto flex-1 pr-2 space-y-4" style="max-height: calc(90vh - 120px);">
+                    ${availableCourses.map(course => {
+                        const isRegistered = userRegistrations.includes(course.id);
+                        const buttonClass = isRegistered ? 
+                            'bg-gray-400 text-white cursor-not-allowed' : 
+                            'bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white cursor-pointer transform hover:scale-105';
+                        const buttonText = isRegistered ? '履修済み' : '履修登録';
+                        
+                        return `
+                            <div class="bg-gradient-to-r from-white to-gray-50 border border-gray-200 rounded-xl p-5 transition-all duration-300 hover:shadow-lg hover:border-blue-300">
+                                <div class="flex justify-between items-start mb-3">
+                                    <h4 class="font-bold text-gray-900 text-lg leading-tight">${course.title || course.class_name}</h4>
+                                    <span class="text-sm bg-blue-100 text-blue-800 px-3 py-1 rounded-full font-semibold flex-shrink-0 ml-3">${course.credit || 0}単位</span>
+                                </div>
+                                <div class="text-sm text-gray-500 mb-4 space-y-2">
+                                    <div class="flex items-center">
+                                        <span class="mr-2 text-lg">👨‍🏫</span>
+                                        <span class="font-medium">担当:</span>
+                                        <span class="ml-1">${course.professor_name || 'TBA'}</span>
+                                    </div>
+                                    <div class="flex items-center">
+                                        <span class="mr-2 text-lg">🏫</span>
+                                        <span class="font-medium">教室:</span>
+                                        <span class="ml-1">${course.room_no || 'TBA'}</span>
+                                    </div>
+                                    <div class="flex items-center">
+                                        <span class="mr-2 text-lg">📅</span>
+                                        <span class="font-medium">学期:</span>
+                                        <span class="ml-1">${course.year || ''}年度 ${course.semester || ''}</span>
+                                    </div>
+                                </div>
+                                <button onclick="registerCourseFromModal('${course.id}', '${course.title || course.class_name}')" 
+                                        class="${buttonClass} px-6 py-3 rounded-lg text-sm w-full font-semibold transition-all duration-200 shadow-md"
+                                        ${isRegistered ? 'disabled' : ''}>
+                                    ${buttonText}
+                                </button>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            `;
+            
+            modal.appendChild(modalContent);
+            document.body.appendChild(modal);
+        }
+
+        function registerCourseFromModal(courseId, courseName) {
+            if (!currentProjectId) {
+                alert('時間割プロジェクトが選択されていません。新しいプロジェクトを作成してください。');
+                return;
+            }
+
+            // 重複チェック
+            if (userRegistrations.includes(courseId)) {
+                alert('この科目は既に履修登録済みです。');
+                return;
+            }
+            
+            registerCourseTooDB(courseId, courseName);
+        }
+
+        async function registerCourseTooDB(courseId, courseName) {
+            try {
+                // selectionsテーブルにINSERT
+                await isapp.selections.addSelection(currentProjectId, courseId);
+                
+                // ローカルデータも更新
+                userRegistrations.push(courseId);
+                
+                alert(`「${courseName}」を履修登録しました。`);
+                
+                // モーダルを閉じる
+                const modal = document.querySelector('.fixed.inset-0');
+                if (modal) {
+                    document.body.removeChild(modal);
+                }
+                
+                // 画面を更新
+                loadScheduleGrid();
+                updateCreditsCounter();
+                
+            } catch (error) {
+                console.error('履修登録エラー:', error);
+                if (error.message && error.message.includes('UNIQUE constraint')) {
+                    alert('この科目は既に履修登録済みです。');
+                } else {
+                    alert('履修登録に失敗しました。');
+                }
+            }
+        }
+    </script>
+</head>
+
+<body class="bg-gradient-to-br from-slate-50 to-blue-50 min-h-screen">
+    <!-- Modern Header with Tailwind -->
+    <header class="bg-white/95 backdrop-blur-lg border-b border-gray-200 sticky top-0 z-50 shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-16">
+                <!-- Left side -->
+                <div class="flex items-center space-x-8">
+                    <!-- Brand -->
+                    <a href="index.html" class="flex items-center space-x-3 text-gray-900 hover:text-blue-600 transition-colors">
+                        <span class="text-3xl">🎓</span>
+                        <div>
+                            <h1 class="text-xl font-bold">SmartCampus</h1>
+                            <span class="text-sm text-gray-500">履修登録システム</span>
+                        </div>
+                    </a>
+                    
+                    <!-- Navigation -->
+                    <nav class="hidden md:flex space-x-2">
+                        <a href="index.html" class="flex items-center px-3 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors">
+                            🏠 <span class="ml-1">ホーム</span>
+                        </a>
+                        <a href="schedule.html" class="flex items-center px-3 py-2 rounded-lg text-sm font-medium bg-blue-100 text-blue-700 border border-blue-200">
+                            📅 <span class="ml-1">時間割表</span>
+                        </a>
+                        <a href="courses.html" class="flex items-center px-3 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors">
+                            📚 <span class="ml-1">科目一覧</span>
+                        </a>
+                        <a href="admin_lib/initdb.html" class="flex items-center px-3 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors">
+                            ⚙️ <span class="ml-1">管理</span>
+                        </a>
+                    </nav>
+                </div>
+                
+                <!-- Right side -->
+                <div class="flex items-center space-x-4">
+                    <!-- User profile -->
+                    <div class="flex items-center space-x-2 px-3 py-2 rounded-lg bg-gray-50 hover:bg-gray-100 cursor-pointer transition-colors" onclick="showUserProfile()">
+                        <div class="w-8 h-8 rounded-full bg-gradient-to-r from-blue-500 to-indigo-600 flex items-center justify-center text-white text-sm font-bold" id="user-initials">👤</div>
+                        <span class="text-sm font-medium text-gray-700" id="user-name">Loading...</span>
+                    </div>
+                    <!-- Logout button -->
+                    <button onclick="logout()" class="px-4 py-2 text-sm font-medium text-white bg-red-500 hover:bg-red-600 rounded-lg transition-colors">
+                        ログアウト
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Mobile navigation -->
+            <div class="md:hidden pb-4">
+                <nav class="grid grid-cols-2 gap-2">
+                    <a href="index.html" class="flex items-center justify-center px-3 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100">
+                        🏠 ホーム
+                    </a>
+                    <a href="schedule.html" class="flex items-center justify-center px-3 py-2 rounded-lg text-sm font-medium bg-blue-100 text-blue-700">
+                        📅 時間割表
+                    </a>
+                    <a href="courses.html" class="flex items-center justify-center px-3 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100">
+                        📚 科目一覧
+                    </a>
+                    <a href="admin_lib/initdb.html" class="flex items-center justify-center px-3 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100">
+                        ⚙️ 管理
+                    </a>
+                </nav>
+            </div>
+        </div>
+    </header>
+
+    <!-- Floating Credits Counter -->
+    <div class="fixed top-20 right-4 z-40">
+        <div id="credits-display" class="bg-gradient-to-r from-blue-500 to-indigo-600 text-white p-4 rounded-2xl shadow-lg transform transition-all duration-300 hover:scale-105">
+            <div class="text-center">
+                <div class="text-sm font-medium opacity-90">履修単位数</div>
+                <div class="text-3xl font-bold"><span id="credits-counter">0</span></div>
+                <div class="text-xs opacity-80">単位</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div class="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
+            <!-- Header -->
+            <div class="bg-gradient-to-r from-blue-50 to-indigo-50 px-6 py-8 border-b border-gray-100">
+                <div class="flex flex-col lg:flex-row lg:items-center justify-between">
+                    <div class="mb-4 lg:mb-0">
+                        <h2 class="text-2xl lg:text-3xl font-bold text-gray-900 flex items-center">
+                            📅 時間割管理
+                        </h2>
+                        <p class="text-gray-600 mt-2">セルをクリックして科目を登録・解除</p>
+                    </div>
+                    <div class="text-sm text-gray-500 bg-white px-4 py-2 rounded-lg border border-gray-200">
+                        💡 Tip: 空のセルをクリックで科目追加、×ボタンで削除
+                    </div>
+                </div>
+                
+                <!-- Project Selector -->
+                <div class="mt-6 p-4 bg-white rounded-xl border border-gray-200">
+                    <div id="project-selector">
+                        <!-- プロジェクト選択UIがここに表示される -->
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Schedule Grid Container -->
+            <div class="p-6">
+                <div id="schedule-container" class="overflow-x-auto">
+                    <!-- 時間割グリッドはJavaScriptで動的に生成されます -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Floating Action Button -->
+    <button onclick="createNewProject()"
+        class="fixed bottom-6 right-6 w-14 h-14 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white rounded-full shadow-lg flex items-center justify-center text-2xl transform hover:scale-110 transition-all duration-300 z-30"
+        title="新しい時間割を作成">
+        ➕
+    </button>
+</body>
+
+</html>
