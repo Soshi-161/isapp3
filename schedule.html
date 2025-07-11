@@ -48,30 +48,39 @@
 
         var allCourses = []; // 全科目データを保存
         var userRegistrations = []; // ユーザーの履修登録データ
+        var currentProject = null; // 現在選択中のプロジェクト（オブジェクト）
         var currentProjectId = null; // 現在選択中のプロジェクトID
         var userProjects = []; // ユーザーのプロジェクト一覧
 
         $(document).ready(async function () {
+            console.log('=== schedule.html 初期化開始 ===');
+            
             try{
+                console.log('👤 ユーザー初期化中...');
                 // ユーザー初期化とヘッダー設定
                 await isapp.initUser();
                 isapp.ui.setUserHeader(isapp.currentUser);
+                console.log('✅ ユーザー初期化完了:', isapp.currentUser);
                 
+                console.log('📚 全科目データ取得中...');
                 // 全科目データを取得
                 allCourses = await isapp.courses.getAllCourses();
-                console.log('取得した科目:', allCourses);
+                console.log('✅ 全科目データ取得完了:', allCourses.length, '件');
                 
+                console.log('📋 ユーザープロジェクト取得中...');
                 // ユーザーのプロジェクト一覧を取得
                 await loadUserProjects();
                 
-                // 最新のプロジェクトを自動選択するか、なければ新規作成を促す
-                if (userProjects.length > 0) {
-                    await selectProject(userProjects[0].id);
-                } else {
-                    userRegistrations = [];
-                }
+                console.log('🎯 現在のプロジェクト復元中...');
+                // LocalStorageから「現在のプロジェクト」を復元を試行
+                await restoreCurrentProject();
+                
+                console.log('=== schedule.html 初期化完了 ===');
                 
             } catch (error) {
+                console.error('❌ schedule.html 初期化でエラーが発生しました:', error);
+                console.error('   エラー詳細:', error.message);
+                console.error('   スタックトレース:', error.stack);
                 console.error('データベース接続エラー:', error);
                 isapp.ui.showError('データベースに接続できません。後ほど再試行してください。');
                 return;
@@ -83,6 +92,13 @@
             loadScheduleGrid();
             // 単位数カウンターを更新
             updateCreditsCounter();
+            
+            // ページのvisibilityが変わった時にLocalStorageの整合性をチェック
+            document.addEventListener('visibilitychange', () => {
+                if (!document.hidden) {
+                    checkProjectConsistency();
+                }
+            });
         });
 
         // ログアウト機能
@@ -100,32 +116,189 @@
 
         // ユーザーのプロジェクト一覧を読み込み
         async function loadUserProjects() {
+            console.log('=== loadUserProjects 開始 ===');
+            
             try {
+                console.log('📋 プロジェクト一覧を取得中...');
                 userProjects = await isapp.projects.getUserProjects();
-                console.log('ユーザープロジェクト:', userProjects);
+                console.log('✅ プロジェクト一覧取得完了:', userProjects);
+                console.log('   プロジェクト数:', userProjects.length);
+                
+                if (userProjects.length > 0) {
+                    console.log('📝 プロジェクト詳細:');
+                    userProjects.forEach((project, index) => {
+                        console.log(`   ${index + 1}. ID: ${project.id} (型: ${typeof project.id}), 年度: ${project.year}, 学期: ${project.semester}, 公開: ${project.public}`);
+                    });
+                }
+                
             } catch (error) {
+                console.error('❌ loadUserProjects でエラーが発生しました:', error);
                 console.log('プロジェクトテーブルが存在しないか、エラーが発生しました:', error);
                 userProjects = [];
+                // エラー時はLocalStorageもクリア
+                localStorage.removeItem('currentProjectId');
+                console.log('🗑️ エラー時にLocalStorageをクリアしました');
             }
+            
+            console.log('=== loadUserProjects 完了 ===');
+        }
+
+        // LocalStorageから現在のプロジェクトを復元
+        async function restoreCurrentProject() {
+            console.log('=== restoreCurrentProject 開始 ===');
+            
+            try {
+                // まずLocalStorageから保存されたプロジェクトIDを取得
+                const savedProjectId = localStorage.getItem('currentProjectId');
+                console.log('💾 LocalStorageから取得したプロジェクトID:', savedProjectId, '(型:', typeof savedProjectId, ')');
+                console.log('📋 利用可能なプロジェクト一覧:', userProjects);
+                
+                let selectedProject = null;
+                
+                if (savedProjectId) {
+                    console.log('🔍 保存されたプロジェクトIDをチェック中...');
+                    
+                    // 保存されたプロジェクトIDが現在のプロジェクト一覧に存在するかチェック（型変換も考慮）
+                    selectedProject = userProjects.find(p => p.id == savedProjectId);
+                    
+                    if (selectedProject) {
+                        console.log('✅ 保存されたプロジェクトが見つかりました:', selectedProject);
+                    } else {
+                        console.warn('❌ LocalStorageのプロジェクトが存在しません:', savedProjectId);
+                        console.warn('   利用可能なプロジェクトIDs:', userProjects.map(p => `${p.id} (型: ${typeof p.id})`));
+                        localStorage.removeItem('currentProjectId');
+                        console.log('🗑️ LocalStorageから無効なプロジェクトIDを削除しました');
+                    }
+                } else {
+                    console.log('📝 LocalStorageにプロジェクトIDが保存されていません');
+                }
+                
+                // 選択されたプロジェクトがない場合はデフォルトプロジェクトを選択
+                if (!selectedProject) {
+                    console.log('🔄 デフォルトプロジェクトの選択を試行中...');
+                    
+                    if (userProjects.length > 0) {
+                        selectedProject = userProjects[0]; // 最新のプロジェクト
+                        console.log('📌 ユーザープロジェクトの最新を選択:', selectedProject);
+                        
+                        // 新しく選択したプロジェクトをLocalStorageに保存
+                        localStorage.setItem('currentProjectId', selectedProject.id);
+                        console.log('💾 新しいプロジェクトIDをLocalStorageに保存:', selectedProject.id);
+                    } else {
+                        console.log('⚠️ ユーザープロジェクトが空です。isapp.jsのgetLatestProjectを試行...');
+                        
+                        // フォールバック: isapp.jsのgetLatestProjectを試行
+                        try {
+                            selectedProject = await isapp.projects.getLatestProject();
+                            if (selectedProject) {
+                                console.log('🔄 isapp.jsから取得したプロジェクト:', selectedProject);
+                                localStorage.setItem('currentProjectId', selectedProject.id);
+                                console.log('💾 フォールバックプロジェクトIDをLocalStorageに保存:', selectedProject.id);
+                            } else {
+                                console.log('❌ isapp.jsからもプロジェクトを取得できませんでした');
+                            }
+                        } catch (fallbackError) {
+                            console.error('❌ isapp.jsのgetLatestProjectでエラー:', fallbackError);
+                        }
+                    }
+                }
+                
+                // プロジェクトを設定
+                currentProject = selectedProject;
+                currentProjectId = selectedProject ? selectedProject.id : null;
+                console.log('🎯 最終的に選択されたプロジェクト:', currentProject);
+                console.log('🎯 現在のプロジェクトID:', currentProjectId);
+                
+                if (currentProject) {
+                    console.log('📚 プロジェクトの履修データを取得中...');
+                    userRegistrations = await isapp.selections.getProjectSelections(currentProject.id);
+                    console.log('✅ 履修データ取得完了:', userRegistrations);
+                } else {
+                    console.log('⚠️ プロジェクトが選択されていません。履修データを空にします');
+                    userRegistrations = [];
+                    localStorage.removeItem('currentProjectId'); // プロジェクトがない場合は保存データを削除
+                    console.log('🗑️ LocalStorageをクリアしました');
+                }
+                
+                console.log('=== restoreCurrentProject 完了 ===');
+                
+            } catch (error) {
+                console.error('❌ restoreCurrentProject でエラーが発生しました:', error);
+                console.error('   エラー詳細:', error.message);
+                
+                currentProject = null;
+                currentProjectId = null;
+                userRegistrations = [];
+                localStorage.removeItem('currentProjectId'); // エラー時は保存データを削除
+                
+                console.log('🧹 エラー時のクリーンアップ完了');
+            }
+            
+            // プロジェクト選択UIを更新
+            loadProjectSelector();
         }
 
         // プロジェクト選択
         async function selectProject(projectId) {
-            currentProjectId = projectId;
+            console.log('=== selectProject 開始 ===');
+            console.log('🎯 選択対象のプロジェクトID:', projectId, '(型:', typeof projectId, ')');
+            
+            // プロジェクトIDが有効かチェック（型変換も考慮）
+            const selectedProject = userProjects.find(p => p.id == projectId);
+            console.log('📋 プロジェクト検索結果:', selectedProject);
+            
+            if (!selectedProject) {
+                console.error('❌ 選択されたプロジェクトが見つかりません:', projectId);
+                console.error('   利用可能なプロジェクト:', userProjects.map(p => `ID: ${p.id} (型: ${typeof p.id})`));
+                
+                alert('選択されたプロジェクトが見つかりません。プロジェクト一覧を更新します。');
+                
+                // プロジェクト一覧を再読み込み
+                console.log('🔄 プロジェクト一覧の再読み込み中...');
+                await loadUserProjects();
+                
+                // 再度最新のプロジェクトを選択
+                console.log('🔄 最新プロジェクトの再選択中...');
+                await restoreCurrentProject();
+                console.log('=== selectProject エラー処理完了 ===');
+                return;
+            }
+            
+            currentProject = selectedProject;
+            currentProjectId = selectedProject.id;
+            console.log('✅ プロジェクトを設定:', currentProject);
+            
+            // LocalStorageに保存
+            localStorage.setItem('currentProjectId', currentProjectId.toString());
+            console.log('💾 LocalStorageに保存:', currentProjectId);
             
             try {
-                // 選択されたプロジェクトの履修科目を取得
-                userRegistrations = await isapp.selections.getProjectSelections(projectId);
-                console.log('プロジェクト履修データ:', userRegistrations);
+                console.log('📚 履修データを取得中...');
+                userRegistrations = await isapp.selections.getProjectSelections(currentProjectId);
+                console.log('✅ 履修データ取得完了:', userRegistrations);
+                console.log('   履修科目数:', userRegistrations.length);
                 
+                console.log('🔄 UI更新中...');
                 // UIを更新
                 loadScheduleGrid();
                 updateCreditsCounter();
                 updateProjectSelector();
+                console.log('✅ プロジェクトを選択しました:', currentProject);
+                
             } catch (error) {
-                console.error('プロジェクト選択エラー:', error);
+                console.error('❌ selectProject でエラーが発生しました:', error);
+                console.error('   エラー詳細:', error.message);
+                
                 userRegistrations = [];
+                
+                // エラーが発生した場合は保存されたプロジェクトIDを削除
+                localStorage.removeItem('currentProjectId');
+                console.log('🗑️ エラー時にLocalStorageをクリア');
+                
+                alert('プロジェクトデータの読み込みに失敗しました。');
             }
+            
+            console.log('=== selectProject 完了 ===');
         }
 
         // プロジェクト選択UIの生成
@@ -133,7 +306,7 @@
             const container = document.getElementById('project-selector');
             if (!container) return;
 
-            const selectedProject = userProjects.find(p => p.id === currentProjectId);
+            const selectedProject = currentProject; // currentProjectオブジェクトを使用
             const selectedProjectText = selectedProject ? 
                 `${selectedProject.year}年度 ${isapp.utils.getSemesterName(selectedProject.semester)} (${selectedProject.public ? '公開' : '非公開'})` : 
                 '時間割プロジェクトを選択';
@@ -544,7 +717,7 @@
 
         function showCourseSelectionModal(dayOfWeek, period) {
             // 現在選択中のプロジェクトを取得
-            const selectedProject = userProjects.find(p => p.id === currentProjectId);
+            const selectedProject = currentProject; // currentProjectオブジェクトを使用
             if (!selectedProject) {
                 alert('時間割プロジェクトが選択されていません。');
                 return;
@@ -707,7 +880,7 @@
                             <p class="text-sm">新規ボタンから作成してください</p>
                         </div>` :
                         userProjects.map(project => {
-                            const isSelected = project.id === currentProjectId;
+                            const isSelected = project.id === currentProjectId; // currentProjectIdで比較
                             const semesterName = isapp.utils.getSemesterName(project.semester);
                             const publicStatus = project.public ? '公開' : '非公開';
                             const selectionClass = isSelected ? 
@@ -811,10 +984,14 @@
                 await loadUserProjects();
                 
                 // 削除されたプロジェクトが選択中だった場合は別のプロジェクトを選択
-                if (currentProjectId === projectId) {
+                if (currentProjectId == projectId) { // == で型変換も考慮
+                    // LocalStorageからも削除
+                    localStorage.removeItem('currentProjectId');
+                    
                     if (userProjects.length > 0) {
                         await selectProject(userProjects[0].id);
                     } else {
+                        currentProject = null;
                         currentProjectId = null;
                         userRegistrations = [];
                         loadScheduleGrid();
@@ -838,6 +1015,36 @@
                 console.error('プロジェクト削除エラー:', error);
                 alert('プロジェクトの削除に失敗しました。');
             }
+        }
+
+        // プロジェクトの整合性チェック（他のタブで削除された場合などに対応）
+        async function checkProjectConsistency() {
+            console.log('=== checkProjectConsistency 開始 ===');
+            
+            try {
+                const savedProjectId = localStorage.getItem('currentProjectId');
+                console.log('💾 LocalStorageのプロジェクトID:', savedProjectId);
+                console.log('🎯 現在のプロジェクトID:', currentProjectId);
+                
+                if (savedProjectId && currentProjectId) {
+                    const projectId = parseInt(savedProjectId);
+                    
+                    // 現在のプロジェクトIDと異なる場合、または存在しない場合は復元を試行
+                    if (projectId != currentProjectId || !userProjects.some(p => p.id == projectId)) { // == で型変換も考慮
+                        console.log('⚠️ プロジェクト整合性チェック: 復元を実行');
+                        await loadUserProjects();
+                        await restoreCurrentProject();
+                    } else {
+                        console.log('✅ プロジェクト整合性: 問題なし');
+                    }
+                } else {
+                    console.log('ℹ️ プロジェクトまたはLocalStorageが空のため、整合性チェックをスキップ');
+                }
+            } catch (error) {
+                console.error('❌ プロジェクト整合性チェックエラー:', error);
+            }
+            
+            console.log('=== checkProjectConsistency 完了 ===');
         }
     </script>
 </head>
